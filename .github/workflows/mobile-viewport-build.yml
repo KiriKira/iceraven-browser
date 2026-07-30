@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build signed APKs
+    name: Build signed arm64 APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Iceraven source
@@ -76,8 +76,8 @@ jobs:
         env:
           BUILD_TOOLS_VERSION: ${{ env.BUILD_TOOL_VERSION }}
 
-      - name: Upload signed APKs
+      - name: Upload signed arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.ref }}-signed-apks
-          path: mobile/android/fenix/gradle/build/app/outputs/apk/forkRelease/*.apk
+          name: ${{ inputs.ref }}-arm64-v8a-signed-apk
+          path: mobile/android/fenix/gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk
