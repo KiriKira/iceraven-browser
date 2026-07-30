@@ -1,0 +1,83 @@
+name: Build Mobile Viewport Iceraven
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to build
+        required: true
+        default: force-mobile-viewport-2.44.0
+
+jobs:
+  build:
+    name: Build signed APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Iceraven source
+        uses: actions/checkout@v4
+        with:
+          repository: KiriKira/iceraven-browser
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+          fetch-depth: 0
+          path: mobile/android/fenix
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Install Android SDK with pieces Gradle skips
+        working-directory: mobile/android/fenix
+        run: ./automation/iceraven/install-sdk.sh
+
+      - name: Patch Android Components
+        working-directory: mobile/android/fenix
+        run: ./automation/iceraven/patch_android_components.sh
+
+      - name: Replace strings
+        working-directory: mobile/android/fenix
+        run: |
+          sed -i 's/Firefox/Iceraven/g' app/src/*/res/values*/*strings.xml
+          sed -i '/about_content/s/Mozilla/@forkmaintainers/' app/src/*/res/values*/*strings.xml
+          sed -i '/<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%s/%1$s/g; /<string name="trackers_blocked_panel_categorical_num_trackers_blocked">/s/%d/%2$d/g' app/src/*/res/values*/*strings.xml
+
+      - name: Create source tree compatibility files
+        run: |
+          mkdir -p mobile/gradle mobile/android/fenix/mobile/android
+          cp -a mobile/android/fenix/gradle/. mobile/gradle/
+          cp mobile/android/fenix/version.txt mobile/android/fenix/mobile/android/version.txt
+
+      - name: Build forkRelease variant
+        uses: gradle/gradle-build-action@v2
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=4g -Xms1g -Xmx7g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dev/stderr"
+        with:
+          build-root-directory: mobile/android/fenix
+          gradle-home-cache-cleanup: true
+          gradle-executable: /usr/bin/time
+          arguments: -v ./gradlew app:assembleForkRelease -PversionName=${{ inputs.ref }} --stacktrace --no-daemon
+
+      - name: Setup build tool version variable
+        shell: bash
+        run: |
+          BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)
+          echo "BUILD_TOOL_VERSION=$BUILD_TOOL_VERSION" >> "$GITHUB_ENV"
+
+      - name: Sign APKs
+        uses: abhijitvalluri/sign-apks@v0.8
+        with:
+          releaseDirectory: mobile/android/fenix/gradle/build/app/outputs/apk/forkRelease/
+          signingKeyBase64: ${{ secrets.DEBUG_SIGNING_KEY }}
+          alias: ${{ secrets.DEBUG_ALIAS }}
+          keyStorePassword: ${{ secrets.DEBUG_KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.DEBUG_KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: ${{ env.BUILD_TOOL_VERSION }}
+
+      - name: Upload signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.ref }}-signed-apks
+          path: mobile/android/fenix/gradle/build/app/outputs/apk/forkRelease/*.apk
