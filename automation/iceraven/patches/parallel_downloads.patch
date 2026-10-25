@@ -1,0 +1,38 @@
+diff --git a/components/feature/downloads/src/main/java/mozilla/components/feature/downloads/AbstractFetchDownloadService.kt b/components/feature/downloads/src/main/java/mozilla/components/feature/downloads/AbstractFetchDownloadService.kt
+index 351af6b1ef..f2c0616f8f 100644
+--- a/components/feature/downloads/src/main/java/mozilla/components/feature/downloads/AbstractFetchDownloadService.kt
++++ b/components/feature/downloads/src/main/java/mozilla/components/feature/downloads/AbstractFetchDownloadService.kt
+@@ -104,6 +104,9 @@ abstract class AbstractFetchDownloadService : Service() {
+ 
+     protected abstract val httpClient: Client
+ 
++    /** Allows applications to adapt both engine-provided and freshly fetched download bodies. */
++    protected open fun prepareDownloadResponse(download: DownloadState, response: Response): Response = response
++
+     protected open val style: Style = Style()
+ 
+     @VisibleForTesting
+@@ -969,11 +972,12 @@ abstract class AbstractFetchDownloadService : Service() {
+         append: Boolean,
+         usesHttpClient: Boolean,
+     ) {
+-        response.body.useStream { inStream ->
++        val preparedResponse = prepareDownloadResponse(currentDownloadJobState.state, response)
++        preparedResponse.body.useStream { inStream ->
+             var copyInChunkStatus: CopyInChuckStatus? = null
+             val newDownloadState =
+                 currentDownloadJobState.state.withResponse(
+-                    headers = response.headers,
++                    headers = preparedResponse.headers,
+                     downloadFileUtils = downloadFileUtils,
+                     stream = inStream,
+                 )
+@@ -990,7 +994,7 @@ abstract class AbstractFetchDownloadService : Service() {
+                             downloadJobState = currentDownloadJobState,
+                             inStream = inStream,
+                             outStream = outStream,
+-                            downloadWithHttpClient = usesHttpClient,
++                            downloadWithHttpClient = usesHttpClient || preparedResponse !== response,
+                         )
+                 },
+             )

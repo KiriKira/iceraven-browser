@@ -24,6 +24,12 @@ sed -i 's#mobile/android/##g' android-components/components/lib/crash/build.grad
 git -C android-components apply < automation/iceraven/patches/top_sites_no_most_visted_sites.patch
 git -C android-components apply < automation/iceraven/patches/toolbar.patch
 
+# Keep the download response hook in the parent repository rather than an unpublished submodule commit.
+if ! git -C android-components apply --reverse --check < automation/iceraven/patches/parallel_downloads.patch 2>/dev/null; then
+  git -C android-components apply --check < automation/iceraven/patches/parallel_downloads.patch || exit 1
+  git -C android-components apply < automation/iceraven/patches/parallel_downloads.patch || exit 1
+fi
+
 python automation/iceraven/toolkit/crashreporter/generate_crash_reporter_sources.py
 
 mkdir -p netwerk/dns

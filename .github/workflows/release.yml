@@ -1,7 +1,17 @@
 name: Release
 
 on:
-  create:
+  push:
+    tags:
+      - 'iceraven-*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release-automation:
@@ -17,7 +27,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          java-version: 17
+          java-version: 21
           distribution: temurin
 
       - name: Install Android SDK with pieces Gradle skips
@@ -32,7 +42,8 @@ jobs:
       - name: Patch on the fly
         run: |
           ./automation/iceraven/patch_android_components.sh
-          ./automation/iceraven/setup_venv.sh
+          python -m venv venv
+          venv/bin/python -m pip install --no-cache-dir 'glean_parser~=20.1'
 
       - name: Relpace strings
         run: |
@@ -59,10 +70,10 @@ jobs:
           keyPassword: ${{ secrets.DEBUG_KEY_PASSWORD }}
 
       - name: Create changelog
-        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
+        if: startsWith(github.ref, 'refs/tags/iceraven-')
         run: |
           PREVIOUS_RELEASE_TAG=$(git tag --list iceraven-* --sort=-creatordate | tail -n+2 | head -n 1)
-          CURRENT_RELEASE_TAG=${{ github.event.ref }}
+          CURRENT_RELEASE_TAG="$GITHUB_REF_NAME"
           CURRENT_RELEASE_TAG_CAPITALIZE=${CURRENT_RELEASE_TAG^}
           CURRENT_RELEASE_TAG_CAPITALIZE=$(echo $CURRENT_RELEASE_TAG_CAPITALIZE | tr '-' ' ')
           echo "CURRENT_RELEASE_TAG_CAPITALIZE=${CURRENT_RELEASE_TAG_CAPITALIZE}" >> $GITHUB_ENV
@@ -80,23 +91,35 @@ jobs:
           echo -e "## Change log\n" >> temp_changelog.md
           echo "[${PREVIOUS_RELEASE_TAG}...${CURRENT_RELEASE_TAG}](https://github.com/${{ github.repository }}/compare/${PREVIOUS_RELEASE_TAG}...${CURRENT_RELEASE_TAG})" >> temp_changelog.md
 
+          if [ -f "docs/releases/${CURRENT_RELEASE_TAG}.md" ]; then
+            cp "docs/releases/${CURRENT_RELEASE_TAG}.md" temp_changelog.md
+          fi
+
       - name: Rename APKs for Release
-        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
+        if: startsWith(github.ref, 'refs/tags/iceraven-')
         run: |
           mkdir -p dist_apks
-          cp gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk dist_apks/${{ github.event.ref }}-arm64-v8a.apk
-          cp gradle/build/app/outputs/apk/forkRelease/app-armeabi-v7a-forkRelease.apk dist_apks/${{ github.event.ref }}-armeabi-v7a.apk
-          cp gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk dist_apks/${{ github.event.ref }}-x86_64.apk
+          cp gradle/build/app/outputs/apk/forkRelease/app-arm64-v8a-forkRelease.apk "dist_apks/${GITHUB_REF_NAME}-arm64-v8a.apk"
+          cp gradle/build/app/outputs/apk/forkRelease/app-armeabi-v7a-forkRelease.apk "dist_apks/${GITHUB_REF_NAME}-armeabi-v7a.apk"
+          cp gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk "dist_apks/${GITHUB_REF_NAME}-x86_64.apk"
+          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          for apk in dist_apks/*.apk; do
+            "$BUILD_TOOLS_DIR/apksigner" verify "$apk"
+          done
+          (cd dist_apks && sha256sum *.apk > SHA256SUMS)
 
       - name: Release and Upload APKs
-        if: "contains(toJSON(github.event.ref_type), 'tag') && contains(toJSON(github.event.ref), 'iceraven')"
+        if: startsWith(github.ref, 'refs/tags/iceraven-')
         uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.event.ref }}
+          tag_name: ${{ github.ref_name }}
           name: "${{ env.CURRENT_RELEASE_TAG_CAPITALIZE }}"
           draft: false
           prerelease: false
           body_path: temp_changelog.md
-          files: dist_apks/*.apk
+          fail_on_unmatched_files: true
+          files: |
+            dist_apks/*.apk
+            dist_apks/SHA256SUMS

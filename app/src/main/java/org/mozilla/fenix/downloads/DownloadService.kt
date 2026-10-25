@@ -4,7 +4,10 @@
 
 package org.mozilla.fenix.downloads
 
+import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.fetch.Request
+import mozilla.components.concept.fetch.Response
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.downloads.DefaultPackageNameProvider
 import mozilla.components.feature.downloads.DownloadEstimator
@@ -21,6 +24,19 @@ import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 
 class DownloadService : AbstractFetchDownloadService() {
     override val httpClient by lazy { components.core.client }
+    private val parallelDownload by lazy { ParallelDownload(httpClient) }
+
+    override fun prepareDownloadResponse(download: DownloadState, response: Response): Response =
+        parallelDownload.prepare(
+            Request(
+                // Reuse signed CDN URLs instead of following the original redirect for every range.
+                url = response.url,
+                private = download.private,
+                referrerUrl = download.referrerUrl,
+            ),
+            response,
+        )
+
     override val store: BrowserStore by lazy { components.core.store }
     override val style: Style by lazy { Style(R.color.fx_mobile_tertiary) }
     override val notificationsDelegate: NotificationsDelegate by lazy { components.notificationsDelegate }
