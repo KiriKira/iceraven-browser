@@ -4,6 +4,9 @@
 
 package org.mozilla.fenix.components.menu
 
+import kotlin.test.assertNotNull
+import mozilla.components.compose.menu.store.MenuState as CustomizableMenuState
+import mozilla.components.compose.menu.store.MenuStore as CustomizableMenuStore
 import mozilla.components.feature.addons.Addon
 import mozilla.components.service.fxa.manager.AccountState
 import mozilla.components.support.test.robolectric.testContext
@@ -18,7 +21,6 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeMenu
-import org.mozilla.fenix.GleanMetrics.Menu
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
@@ -26,13 +28,12 @@ import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
 import org.mozilla.fenix.helpers.FenixGleanTestRule
+import org.mozilla.fenix.tabgroups.flow.TabGroupFlowEntryPoint
 import org.robolectric.RobolectricTestRunner
-import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class MenuTelemetryMiddlewareTest {
-    @get:Rule
-    val gleanTestRule = FenixGleanTestRule(testContext)
+    @get:Rule val gleanTestRule = FenixGleanTestRule(testContext)
 
     @Test
     fun `WHEN adding a bookmark THEN record the bookmark browser menu telemetry`() {
@@ -45,11 +46,25 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
+    fun `GIVEN middleware is registered to the customizable menu store WHEN an action is dispatched THEN record telemetry`() {
+        val store =
+            CustomizableMenuStore(
+                initialState = CustomizableMenuState(emptyList()),
+                middleware = listOf(MenuTelemetryMiddleware(accessPoint = MenuAccessPoint.Browser)),
+            )
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.AddBookmark)
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "add_bookmark")
+    }
+
+    @Test
     fun `WHEN navigating to edit a bookmark THEN record the edit bookmark browser menu telemetry`() {
         val store = createStore()
         assertNull(Events.browserMenuAction.testGetValue())
 
-        store.dispatch(MenuAction.Navigate.EditBookmark)
+        store.dispatch(MenuAction.Navigate.EditBookmark())
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "edit_bookmark")
     }
@@ -132,7 +147,7 @@ class MenuTelemetryMiddlewareTest {
             MenuAction.Navigate.MozillaAccount(
                 accountState = AccountState.NotAuthenticated,
                 accesspoint = MenuAccessPoint.Browser,
-            ),
+            )
         )
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "sync_account")
@@ -302,13 +317,13 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN navigating to the wallpaper settings THEN record the change wallpaper browser menu telemetry`() {
+    fun `WHEN navigating to the homepage settings THEN record the change wallpaper browser menu telemetry`() {
         val store = createStore()
         assertNull(Events.browserMenuAction.testGetValue())
 
-        store.dispatch(MenuAction.Navigate.Wallpaper)
+        store.dispatch(MenuAction.Navigate.CustomizeHomepage)
 
-        assertTelemetryRecorded(Events.browserMenuAction, item = "change_wallpaper")
+        assertTelemetryRecorded(Events.browserMenuAction, item = "customize_homepage")
     }
 
     @Test
@@ -488,26 +503,6 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN CFR is shown THEN record the CFR is shown menu telemetry`() {
-        val store = createStore()
-        assertNull(Menu.showCfr.testGetValue())
-
-        store.dispatch(MenuAction.OnCFRShown)
-
-        assertTelemetryRecorded(Menu.showCfr)
-    }
-
-    @Test
-    fun `WHEN CFR is dismissed THEN record the CFR is dismissed menu telemetry`() {
-        val store = createStore()
-        assertNull(Menu.dismissCfr.testGetValue())
-
-        store.dispatch(MenuAction.OnCFRDismiss)
-
-        assertTelemetryRecorded(Menu.dismissCfr)
-    }
-
-    @Test
     fun `WHEN moving to a non-private tab THEN record the move to non-private tab browser menu telemetry`() {
         val store = createStore()
         assertNull(Events.browserMenuAction.testGetValue())
@@ -525,6 +520,18 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.Navigate.WebCompatReporter)
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "report_broken_site")
+    }
+
+    @Test
+    fun `WHEN adding a tab to a group THEN record the group flow telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(
+            MenuAction.Navigate.OpenTabGroupFlow(entryPoint = TabGroupFlowEntryPoint.AddTabToGroup(tabId = "123"))
+        )
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "add_to_group")
     }
 
     private fun assertTelemetryRecorded(
@@ -551,12 +558,9 @@ class MenuTelemetryMiddlewareTest {
     private fun createStore(
         menuState: MenuState = MenuState(),
         accessPoint: MenuAccessPoint = MenuAccessPoint.Browser,
-    ) = MenuStore(
-        initialState = menuState,
-        middleware = listOf(
-            MenuTelemetryMiddleware(
-                accessPoint = accessPoint,
-            ),
-        ),
-    )
+    ) =
+        MenuStore(
+            initialState = menuState,
+            middleware = listOf(MenuTelemetryMiddleware(accessPoint = accessPoint)),
+        )
 }

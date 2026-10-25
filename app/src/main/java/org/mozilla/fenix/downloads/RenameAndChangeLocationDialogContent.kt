@@ -21,12 +21,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -34,17 +37,18 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import java.io.File
 import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.button.TextButton
+import mozilla.components.compose.base.theme.PreviewThemeProvider
+import mozilla.components.compose.base.theme.Theme
+import mozilla.components.feature.downloads.R as downloadsR
+import mozilla.components.support.utils.ext.withExtension
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.compose.list.IconListItem
 import org.mozilla.fenix.downloads.listscreen.DownloadRenameDialogTextField
 import org.mozilla.fenix.downloads.listscreen.store.RenameFileError
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.PreviewThemeProvider
-import org.mozilla.fenix.theme.Theme
-import java.io.File
-import mozilla.components.feature.downloads.R as downloadsR
-import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Composable content for the rename and change location dialog.
@@ -67,48 +71,71 @@ fun RenameAndChangeLocationDialogContent(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val (initialBaseName, extension) =
+        remember {
+            // We use a keyless remember to ensure the base name and extension are only calculated
+            // once from the initial state, preventing them from being recalculated on every edit.
+            val file = File(dialogState.fileName)
+            file.nameWithoutExtension to file.extension
+        }
+
     var fileNameState by remember {
-        val end = File(dialogState.fileName).nameWithoutExtension.length
         mutableStateOf(
             TextFieldValue(
-                text = dialogState.fileName,
-                selection = TextRange(0, end),
-            ),
+                text = initialBaseName,
+                selection = TextRange(0, initialBaseName.length),
+            )
         )
     }
 
-    val currentError: RenameFileError? = when {
-        fileNameState.text.contains("/") -> RenameFileError.InvalidFileName
-        else -> null
+    val focusRequester = remember { FocusRequester() }
+    var isFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            val text = fileNameState.text
+            val end = File(text).nameWithoutExtension.length
+            fileNameState = fileNameState.copy(selection = TextRange(0, end))
+        }
     }
 
-    val trimmedFileName = fileNameState.text.trim()
+    val currentError: RenameFileError? =
+        when {
+            fileNameState.text.contains("/") -> RenameFileError.InvalidFileName
+            else -> null
+        }
 
-    val isConfirmEnabled = enableConfirmButton(fileName = trimmedFileName)
+    val trimmedBaseName = fileNameState.text.trim()
+    val fullName = trimmedBaseName.withExtension(extension)
+
+    val isConfirmEnabled = enableConfirmButton(fileName = fullName)
 
     Column(
         modifier = Modifier.padding(all = FirefoxTheme.layout.space.static300),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(
-            modifier = Modifier
-                .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            DialogHeader(
-                title = title,
-            )
+            DialogHeader(title = title)
 
             Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static300))
 
             DownloadRenameDialogTextField(
                 fileNameState = fileNameState,
-                onFileNameChange = { newFileName ->
-                    fileNameState = newFileName
-                    onFileNameChange(newFileName.text)
+                onFileNameChange = { newFileNameState ->
+                    fileNameState = newFileNameState
+                    val newFullName = newFileNameState.text.withExtension(extension)
+                    onFileNameChange(newFullName)
                 },
                 currentError = currentError,
+                focusRequester = focusRequester,
+                modifier =
+                    Modifier.onFocusChanged { focusState ->
+                        isFocused = focusState.isFocused
+                    },
+                extension = extension.ifEmpty { null },
             )
 
             DirectorySelectionItem(
@@ -152,13 +179,8 @@ private fun DialogHeader(
 }
 
 @VisibleForTesting
-internal fun enableConfirmButton(
-    fileName: String,
-): Boolean {
-    val isInvalidRename =
-        fileName.isEmpty() ||
-            '/' in fileName ||
-            '\u0000' in fileName
+internal fun enableConfirmButton(fileName: String): Boolean {
+    val isInvalidRename = fileName.isEmpty() || '/' in fileName || '\u0000' in fileName
     if (isInvalidRename) return false
 
     val base = File(fileName).nameWithoutExtension
@@ -190,9 +212,7 @@ private fun DialogActionButtons(
     isConfirmEnabled: Boolean = true,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = FirefoxTheme.layout.space.static300),
+        modifier = modifier.fillMaxWidth().padding(top = FirefoxTheme.layout.space.static300),
         horizontalArrangement = Arrangement.End,
     ) {
         TextButton(
@@ -223,16 +243,15 @@ data class RenameAndChangeLocationDialogState(
 
 @Composable
 @Preview
-private fun RenameAndChangeLocationDialogContentPreview(
-    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
-) {
+private fun RenameAndChangeLocationDialogContentPreview(@PreviewParameter(PreviewThemeProvider::class) theme: Theme) {
     FirefoxTheme(theme) {
         Surface(color = MaterialTheme.colorScheme.background) {
             RenameAndChangeLocationDialogContent(
-                dialogState = RenameAndChangeLocationDialogState(
-                    fileName = "filename.pdf",
-                    directoryPath = "/storage/emulated/0/Download",
-                ),
+                dialogState =
+                    RenameAndChangeLocationDialogState(
+                        fileName = "filename.pdf",
+                        directoryPath = "/storage/emulated/0/Download",
+                    ),
                 friendlyPath = "~/Downloads",
                 title = "Download file",
                 onFileNameChange = {},

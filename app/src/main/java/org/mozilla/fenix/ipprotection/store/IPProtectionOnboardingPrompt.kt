@@ -10,17 +10,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.AccountStatus
 import mozilla.components.feature.ipprotection.store.state.EligibilityStatus
 import mozilla.components.feature.ipprotection.store.state.IPProtectionState
 import mozilla.components.lib.state.helpers.AbstractBinding
 import mozilla.components.support.utils.DateTimeProvider
 
 /**
- * Triggers the IP protection onboarding bottom sheet when the user first becomes
- * eligible and meets our required heuristic provided by [IPProtectionPromptRepository].
+ * Triggers the IP protection onboarding bottom sheet when the user first becomes eligible and meets our required
+ * heuristic provided by [IPProtectionPromptRepository].
  *
- * @param repository Source of truth for whether the onboarding prompt is still allowed to appear
- * (feature flag, install age, prior dismissals, prior VPN usage).
+ * @param repository Source of truth for whether the onboarding prompt is still allowed to appear (feature flag, install
+ *   age, prior dismissals, prior VPN usage).
  * @param onShowOnboarding Callback invoked when the prompt should be presented to the user.
  * @param timeProvider Supplies the current time.
  * @param mainDispatcher [CoroutineDispatcher] on which [onShowOnboarding] is invoked.
@@ -34,10 +35,13 @@ class IPProtectionOnboardingPrompt(
     store: IPProtectionStore,
 ) : AbstractBinding<IPProtectionState>(store, mainDispatcher) {
     override suspend fun onState(flow: Flow<IPProtectionState>) {
-        flow.map { it.eligibilityStatus }
+        flow
+            .map { Pair(it.eligibilityStatus, it.accountState.status) }
             .distinctUntilChanged()
-            .collect { eligibilityStatus ->
-                if (eligibilityStatus != EligibilityStatus.Eligible) {
+            .collect { (eligibilityStatus, accountStatus) ->
+                val accountInitializing =
+                    accountStatus == AccountStatus.Uninitialized || accountStatus == AccountStatus.WarmingUp
+                if (eligibilityStatus != EligibilityStatus.Eligible || accountInitializing) {
                     return@collect
                 }
 

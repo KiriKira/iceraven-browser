@@ -28,30 +28,33 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.R
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
-import org.mozilla.fenix.tabstray.controller.TabInteractionHandler
+import org.mozilla.fenix.tabstray.controller.ItemInteractionHandler
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
-import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.DragProcessingState
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.InactiveTabsState
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.Mode
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.NormalTabsState
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.TabsTrayConfig
 import org.mozilla.fenix.tabstray.ui.inactivetabs.InactiveTabsList
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.trackingprotection.TrackersBlockedCard
-import mozilla.components.ui.icons.R as iconsR
 
 private val EmptyPageWidth = 170.dp
 
 /**
  * UI for displaying the Normal Tabs Page in the Tab Manager.
  *
- * @param items The list of active tabs to display.
- * @param inactiveTabs The list of inactive tabs to display.
- * @param selectedItemIndex The index of the currently selected tab. This will be scrolled to on first-render.
- * @param selectionMode [TabsTrayState.Mode] indicating whether the Tab Manager is in single selection.
- * @param inactiveTabsExpanded Whether the Inactive Tabs section is expanded.
- * @param displayTabsInGrid Whether the normal and private tabs should be displayed in a grid.
- * @param dragAndDropEnabled Whether the grid supports dragging and dropping for tab groups.
+ * @param normalTabsState The current snapshot of [NormalTabsState].
+ * @param inactiveTabsState The current snapshot of [InactiveTabsState].
+ * @param selectionMode The current selection [Mode].
+ * @param tabsTrayConfig The current snapshot of [TabsTrayConfig].
  * @param displayTabGroupOnboarding Whether onboarding for tab groups should be shown.
- * @param tabInteractionHandler Handles tab interactions, such as moves and drag and drop.
+ * @param dragProcessingState The lifecycle state of tab-group drag handling
+ * @param itemInteractionHandler Handles tab interactions, such as moves and drag and drop.
+ * @param enteringGroupId The id of a group entering composition, if any. Can be null.
  * @param trackersBlockedCount The number of trackers blocked to display in the footer card.
  * @param focusEnabled Whether the focus indicator is enabled.
  * @param onTabClose Invoked when the user clicks to close a tab.
@@ -60,36 +63,38 @@ private val EmptyPageWidth = 170.dp
  * @param shouldShowInactiveTabsAutoCloseDialog Whether the inactive tabs auto close dialog should be displayed.
  * @param onInactiveTabsHeaderClick Invoked when the user clicks on the inactive tabs section header.
  * @param onDeleteAllInactiveTabsClick Invoked when the user clicks on the delete all inactive tabs button.
- * @param onInactiveTabsAutoCloseDialogShown Invoked when the inactive tabs auto close dialog
- * is presented to the user.
- * @param onInactiveTabAutoCloseDialogCloseButtonClick Invoked when the user clicks on the inactive
- * tab auto close dialog's dismiss button.
- * @param onEnableInactiveTabAutoCloseClick Invoked when the user clicks on the inactive tab auto
- * close dialog's enable button.
+ * @param onInactiveTabsAutoCloseDialogShown Invoked when the inactive tabs auto close dialog is presented to the user.
+ * @param onInactiveTabAutoCloseDialogCloseButtonClick Invoked when the user clicks on the inactive tab auto close
+ *   dialog's dismiss button.
+ * @param onEnableInactiveTabAutoCloseClick Invoked when the user clicks on the inactive tab auto close dialog's enable
+ *   button.
  * @param onInactiveTabClick Invoked when the user clicks on an inactive tab.
  * @param onInactiveTabClose Invoked when the user clicks on an inactive tab's close button.
  * @param shouldShowInactiveTabsCFR Returns whether the inactive tabs CFR is displayed.
  * @param onInactiveTabsCFRShown Invoked when the inactive tabs CFR is displayed.
  * @param onInactiveTabsCFRClick Invoked when the inactive tabs CFR is clicked.
  * @param onInactiveTabsCFRDismiss Invoked when the inactive tabs CFR is dismissed.
- * @param onDeleteTabGroupClick Invoked when the user clicks on delete tab group.
  * @param onEditTabGroupClick Invoked when the user clicks to edit a tab group.
  * @param onCloseTabGroupClick Invoked when the user clicks to close a tab group.
+ * @param onShareTabGroupClick Invoked when the user clicks to share a tab group.
+ * @param onDeleteTabGroupClick Invoked when the user clicks on delete tab group.
+ * @param onUngroupTabGroupClick Invoked when the user clicks to ungroup a tab group.
  * @param onTabGroupOnboardingDismiss Invoked when the user dismisses the tab group onboarding card.
+ * @param onTabGroupOnboardingShown Invoked when the tab group onboarding card is shown to the user.
  * @param onPrivacyReportTapped Invoked when the trackers blocked pill is tapped.
+ * @param onEnteringGroupAnimationPlayed Invoked when the group entrance animation is played.
  */
 @Composable
 @Suppress("LongParameterList")
 internal fun NormalTabsPage(
-    items: List<TabsTrayItem>,
-    inactiveTabs: List<TabsTrayItem.Tab>,
-    selectedItemIndex: Int,
-    selectionMode: TabsTrayState.Mode,
-    inactiveTabsExpanded: Boolean,
-    displayTabsInGrid: Boolean,
-    dragAndDropEnabled: Boolean,
+    normalTabsState: NormalTabsState,
+    inactiveTabsState: InactiveTabsState,
+    selectionMode: Mode,
+    tabsTrayConfig: TabsTrayConfig,
     displayTabGroupOnboarding: Boolean,
-    tabInteractionHandler: TabInteractionHandler,
+    dragProcessingState: DragProcessingState,
+    itemInteractionHandler: ItemInteractionHandler,
+    enteringGroupId: String?,
     trackersBlockedCount: Int? = null,
     focusEnabled: Boolean,
     onTabClose: (TabsTrayItem.Tab) -> Unit,
@@ -107,56 +112,62 @@ internal fun NormalTabsPage(
     onInactiveTabsCFRShown: () -> Unit,
     onInactiveTabsCFRClick: () -> Unit,
     onInactiveTabsCFRDismiss: () -> Unit,
-    onDeleteTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
+    onShareTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
+    onDeleteTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
+    onUngroupTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onTabGroupOnboardingDismiss: () -> Unit,
+    onTabGroupOnboardingShown: () -> Unit,
     onPrivacyReportTapped: (() -> Unit)? = null,
+    onEnteringGroupAnimationPlayed: () -> Unit,
 ) {
-    if (items.isNotEmpty() || inactiveTabs.isNotEmpty()) {
+    if (normalTabsState.items.isNotEmpty() || inactiveTabsState.tabs.isNotEmpty()) {
         var showAutoCloseDialog by remember { mutableStateOf(shouldShowInactiveTabsAutoCloseDialog) }
 
-        val optionalInactiveTabsHeader: (@Composable () -> Unit)? = if (inactiveTabs.isEmpty()) {
-            null
-        } else {
-            {
-                InactiveTabsList(
-                    inactiveTabs = inactiveTabs,
-                    expanded = inactiveTabsExpanded,
-                    showAutoCloseDialog = showAutoCloseDialog,
-                    showCFR = shouldShowInactiveTabsCFR,
-                    onHeaderClick = onInactiveTabsHeaderClick,
-                    onDeleteAllButtonClick = onDeleteAllInactiveTabsClick,
-                    onAutoCloseDismissClick = {
-                        onInactiveTabAutoCloseDialogCloseButtonClick()
-                        showAutoCloseDialog = !showAutoCloseDialog
-                    },
-                    onEnableAutoCloseClick = {
-                        onEnableInactiveTabAutoCloseClick()
-                        showAutoCloseDialog = !showAutoCloseDialog
-                    },
-                    onTabClick = onInactiveTabClick,
-                    onTabCloseClick = onInactiveTabClose,
-                    onCFRShown = onInactiveTabsCFRShown,
-                    onCFRClick = onInactiveTabsCFRClick,
-                    onCFRDismiss = onInactiveTabsCFRDismiss,
-                )
-                if (!displayTabsInGrid) {
-                    Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static200))
+        val optionalInactiveTabsHeader: (@Composable () -> Unit)? =
+            if (inactiveTabsState.tabs.isEmpty()) {
+                null
+            } else {
+                {
+                    InactiveTabsList(
+                        inactiveTabs = inactiveTabsState.tabs,
+                        expanded = inactiveTabsState.isExpanded,
+                        showAutoCloseDialog = showAutoCloseDialog,
+                        showCFR = shouldShowInactiveTabsCFR,
+                        onHeaderClick = onInactiveTabsHeaderClick,
+                        onDeleteAllButtonClick = onDeleteAllInactiveTabsClick,
+                        onAutoCloseDismissClick = {
+                            onInactiveTabAutoCloseDialogCloseButtonClick()
+                            showAutoCloseDialog = !showAutoCloseDialog
+                        },
+                        onEnableAutoCloseClick = {
+                            onEnableInactiveTabAutoCloseClick()
+                            showAutoCloseDialog = !showAutoCloseDialog
+                        },
+                        onTabClick = onInactiveTabClick,
+                        onTabCloseClick = onInactiveTabClose,
+                        onCFRShown = onInactiveTabsCFRShown,
+                        onCFRClick = onInactiveTabsCFRClick,
+                        onCFRDismiss = onInactiveTabsCFRDismiss,
+                    )
+                    if (!tabsTrayConfig.displayTabsInGrid) {
+                        Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static200))
+                    }
                 }
             }
-        }
 
         if (shouldShowInactiveTabsAutoCloseDialog) {
             onInactiveTabsAutoCloseDialogShown()
         }
 
         TabLayout(
-            tabs = items,
-            displayTabsInGrid = displayTabsInGrid,
-            dragAndDropEnabled = dragAndDropEnabled,
+            tabs = normalTabsState.items,
+            displayTabsInGrid = tabsTrayConfig.displayTabsInGrid,
+            dragAndDropEnabled = tabsTrayConfig.tabGroupsDragAndDropEnabled,
+            liveReorderEnabled = tabsTrayConfig.tabGroupsLiveReorderEnabled,
             displayTabGroupOnboarding = displayTabGroupOnboarding,
-            selectedItemIndex = selectedItemIndex,
+            selectedItemIndex = normalTabsState.selectedItemIndex,
             selectionMode = selectionMode,
             trackersBlockedCount = trackersBlockedCount,
             modifier = Modifier.testTag(TabsTrayTestTag.NORMAL_TABS_LIST),
@@ -164,13 +175,19 @@ internal fun NormalTabsPage(
             onItemClick = onItemClick,
             onItemLongClick = onItemLongClick,
             header = optionalInactiveTabsHeader,
-            onDeleteTabGroupClick = onDeleteTabGroupClick,
             onEditTabGroupClick = onEditTabGroupClick,
             onCloseTabGroupClick = onCloseTabGroupClick,
+            onShareTabGroupClick = onShareTabGroupClick,
+            onDeleteTabGroupClick = onDeleteTabGroupClick,
+            onUngroupTabGroupClick = onUngroupTabGroupClick,
             onTabGroupOnboardingDismiss = onTabGroupOnboardingDismiss,
-            tabInteractionHandler = tabInteractionHandler,
+            onTabGroupOnboardingShown = onTabGroupOnboardingShown,
+            itemInteractionHandler = itemInteractionHandler,
             focusEnabled = focusEnabled,
             onPrivacyReportTapped = onPrivacyReportTapped,
+            enteringGroupId = enteringGroupId,
+            onGroupEntranceAnimationPlayed = onEnteringGroupAnimationPlayed,
+            dragProcessingState = dragProcessingState,
         )
     } else {
         EmptyNormalTabsPage(
@@ -196,9 +213,7 @@ private fun EmptyNormalTabsPage(
     val bottomBarHeight = dimensionResource(id = R.dimen.browser_toolbar_height)
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag(TabsTrayTestTag.EMPTY_NORMAL_TABS_LIST),
+        modifier = modifier.fillMaxSize().testTag(TabsTrayTestTag.EMPTY_NORMAL_TABS_LIST),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         EmptyTabPage(modifier = Modifier.weight(1f)) {

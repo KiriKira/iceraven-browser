@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.downloads.listscreen.middleware
 
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,6 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
 import org.mozilla.fenix.downloads.listscreen.store.RenameFileError
-import java.io.File
 
 /**
  * Middleware for renaming downloaded files.
@@ -46,13 +46,10 @@ class DownloadUIRenameMiddleware(
             is DownloadUIAction.RenameFileConfirmed -> processFileRenaming(store, action.item, action.newName)
             is DownloadUIAction.FileExtensionChangedByUser -> {
                 val previousName = action.item.fileName ?: return
-                val originalExtension = File(previousName).extension.lowercase()
-                val proposedExtension = File(action.newName).extension.lowercase()
+                val originalExtension = File(previousName.trim()).extension.lowercase()
+                val proposedExtension = File(action.newName.trim()).extension.lowercase()
 
-                if (
-                    proposedExtension.isNotEmpty() && proposedExtension != originalExtension &&
-                    store.state.itemToChangeExtension?.fileName == null
-                ) {
+                if (proposedExtension != originalExtension && store.state.itemToChangeExtension?.fileName == null) {
                     store.dispatch(DownloadUIAction.ShowChangeFileExtensionDialog(action.item))
                 } else {
                     store.dispatch(DownloadUIAction.CloseChangeFileExtensionDialog)
@@ -91,11 +88,12 @@ class DownloadUIRenameMiddleware(
                 return@launch
             }
 
-            val attemptFileRename = downloadFileUtils.renameFile(
-                directoryPath = download.directoryPath,
-                oldName = download.fileName,
-                newName = newNameTrimmed,
-            )
+            val attemptFileRename =
+                downloadFileUtils.renameFile(
+                    directoryPath = download.directoryPath,
+                    oldName = download.fileName,
+                    newName = newNameTrimmed,
+                )
 
             if (!attemptFileRename) {
                 dispatchAction(

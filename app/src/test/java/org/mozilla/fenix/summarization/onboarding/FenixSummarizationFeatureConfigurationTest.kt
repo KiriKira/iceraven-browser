@@ -7,6 +7,7 @@ package org.mozilla.fenix.summarization.onboarding
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import mozilla.components.lib.shake.ShakeSensitivity
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,32 +24,36 @@ class FenixSummarizationFeatureConfigurationTest {
     private lateinit var discoverySettings: FenixSummarizationFeatureConfiguration
     private lateinit var settingsBinding: FakeSummarizationSettingsBinding
 
-    private class FakeSummarizationSettingsBinding() : SummarizationSettingsBinding {
-        val _isFeatureEnabled = MutableStateFlow(false)
-        val _isGestureEnabled = MutableStateFlow(false)
+    private class FakeSummarizationSettingsBinding : SummarizationSettingsBinding {
+        val isFeatureEnabledFlow = MutableStateFlow(false)
+        val isGestureEnabledFlow = MutableStateFlow(false)
+        val shakeSensitivityFlow = MutableStateFlow(ShakeSensitivity.Medium)
 
-        override val isFeatureEnabled: StateFlow<Boolean> = _isFeatureEnabled
-        override val isGestureEnabled: StateFlow<Boolean> = _isGestureEnabled
+        override val isFeatureEnabled: StateFlow<Boolean> = isFeatureEnabledFlow
+        override val isGestureEnabled: StateFlow<Boolean> = isGestureEnabledFlow
+        override val shakeSensitivity: StateFlow<ShakeSensitivity> = shakeSensitivityFlow
     }
 
     @Before
     fun setUp() {
-        testSettings = Settings(
-            appContext = testContext,
-            packageName = "package-name",
-            isBenchmarkBuild = false,
-        )
+        testSettings =
+            Settings(
+                appContext = testContext,
+                packageName = "package-name",
+                isBenchmarkBuild = false,
+            )
         settingsBinding = FakeSummarizationSettingsBinding()
-        discoverySettings = FenixSummarizationFeatureConfiguration(
-            settings = testSettings,
-            summarizationSettingsBinding = settingsBinding,
-        )
+        discoverySettings =
+            FenixSummarizationFeatureConfiguration(
+                settings = testSettings,
+                summarizationSettingsBinding = settingsBinding,
+            )
     }
 
     @Test
     fun `menu item is visible if the feature flag is enabled and the feature itself is turned on`() {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertTrue(
             "Menu item should be visible if the feature flag is enabled and the feature itself is turned on",
@@ -62,7 +67,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
 
         // AND the feature is not enabled
-        settingsBinding._isFeatureEnabled.value = false
+        settingsBinding.isFeatureEnabledFlow.value = false
 
         assertFalse(
             "Menu item should not be visible if the feature flag is enabled and the feature itself is not enabled",
@@ -76,7 +81,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = false
 
         // AND the feature is somehow left enabled
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertFalse(
             "Menu item should not be visible if the feature flag is not enabled",
@@ -87,7 +92,7 @@ class FenixSummarizationFeatureConfigurationTest {
     @Test
     fun `menu item is highlighted after menu item is exposed once`() {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // menu item is exposed once
         discoverySettings.cacheDiscoveryEvent(SummarizeDiscoveryEvent.MenuItemExposure)
@@ -102,7 +107,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `menu item is not highlighted after menu item is exposed the second time`() {
         // Given both the feature flag and feature are enabled
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // WHEN menu item is exposed twice
         discoverySettings.cacheDiscoveryEvent(SummarizeDiscoveryEvent.MenuItemExposure)
@@ -120,7 +125,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
 
         // AND the feature is not enabled
-        settingsBinding._isFeatureEnabled.value = false
+        settingsBinding.isFeatureEnabledFlow.value = false
 
         assertFalse(
             "Menu item should not be highlighted if the feature is not enabled",
@@ -134,7 +139,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = false
 
         // GIVEN the feature is somehow enabled
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertFalse(
             "Menu item should not be highlighted if the feature flag is not enabled",
@@ -148,7 +153,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = false
 
         // GIVEN the feature is somehow enabled
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertFalse(
             "Menu overflow should not be highlighted if the feature flag is not enabled",
@@ -162,7 +167,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
 
         // GIVEN the feature is NOT enabled
-        settingsBinding._isFeatureEnabled.value = false
+        settingsBinding.isFeatureEnabledFlow.value = false
 
         assertFalse(
             "Menu overflow should not be highlighted if the feature is not enabled",
@@ -174,7 +179,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `menu overflow is highlighted if the overflow menu item is not interacted with at all`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertTrue(
             "Menu overflow should be highlighted after the overflow menu item is not interacted with",
@@ -186,7 +191,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `menu overflow is not highlighted after the overflow menu item is interacted with once`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // WHEN the overflow menu item is interacted with
         discoverySettings.cacheDiscoveryEvent(SummarizeDiscoveryEvent.MenuOverflowInteraction)
@@ -201,7 +206,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `menu overflow interaction does not get recorded if it is already more than one time`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // WHEN the overflow menu item is interacted with multiple times
         repeat(10) {
@@ -220,7 +225,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `menu item exposure does not get recorded if it is already more than two times`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // WHEN the overflow menu item is interacted with multiple times
         repeat(10) {
@@ -239,7 +244,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `toolbar overflow menu interaction does not get recorded if it is already more than once`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // WHEN the toolbar overflow is interacted with multiple times
         repeat(10) {
@@ -258,7 +263,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `cfr is marked as shown if it was not previously seen before`() {
         // GIVEN the feature flag is enabled
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // when the cfr is shown
         discoverySettings.cacheDiscoveryEvent(SummarizeDiscoveryEvent.CfrExposure)
@@ -276,7 +281,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = false
 
         // GIVEN the feature is enabled
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         assertFalse(
             "Toolbar CFR should not be shown if the feature flag is not enabled",
@@ -290,7 +295,7 @@ class FenixSummarizationFeatureConfigurationTest {
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
 
         // AND the feature is NOT enabled
-        settingsBinding._isFeatureEnabled.value = false
+        settingsBinding.isFeatureEnabledFlow.value = false
 
         assertFalse(
             "Toolbar CFR should not be shown if the feature itself is not enabled",
@@ -302,7 +307,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `toolbar cfr is shown if we have not shown it before`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // AND we have not shown the flag before
         testSettings.shakeToSummarizeToolbarCfrShown = false
@@ -317,7 +322,7 @@ class FenixSummarizationFeatureConfigurationTest {
     fun `toolbar cfr is not shown if we have shown it before even if the feature is fully available`() {
         // GIVEN the feature flag fully available
         testSettings.shakeToSummarizeFeatureFlagEnabled = true
-        settingsBinding._isFeatureEnabled.value = true
+        settingsBinding.isFeatureEnabledFlow.value = true
 
         // AND we have shown the flag before
         testSettings.shakeToSummarizeToolbarCfrShown = true

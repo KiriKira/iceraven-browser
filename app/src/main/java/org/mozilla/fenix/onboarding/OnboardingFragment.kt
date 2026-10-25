@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.toMutableStateList
 import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
@@ -67,13 +68,11 @@ import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.canShowAddSearchWidgetPrompt
 import org.mozilla.fenix.utils.maybeShowAddSearchWidgetPrompt
 
-/**
- * Fragment displaying the onboarding flow.
- */
+/** Fragment displaying the onboarding flow. */
 class OnboardingFragment : Fragment() {
     private val logger = Logger("OnboardingFragment")
 
-    private val removeMarketingFeature = ViewBoundFeatureWrapper<MarketingPageRemovalSupport>()
+    private val addMarketingFeature = ViewBoundFeatureWrapper<MarketingPageAdditionSupport>()
 
     private val rtamoAttributionHandler by lazy {
         RtamoAttributionHandler(requireContext(), requireComponents.settings, requireComponents.addonsProvider)
@@ -89,47 +88,66 @@ class OnboardingFragment : Fragment() {
         )
     }
 
-    private val pagesToDisplay by lazy {
+    private val allOnboardingPages by lazy {
         with(requireContext()) {
             val appWidgetManager = AppWidgetManager.getInstance(this)
             pagesToDisplay(
                 showDefaultBrowserPage = displayDefaultBrowserPage(this),
                 showNotificationPage = canShowNotificationPage(this),
-                showAddWidgetPage = !BuildManufacturerChecker().isXiaomi() &&
-                    canShowAddSearchWidgetPrompt(appWidgetManager),
-            ).toMutableList()
+                showAddWidgetPage =
+                    !BuildManufacturerChecker().isXiaomi() && canShowAddSearchWidgetPrompt(appWidgetManager),
+            )
         }
+    }
+
+    private val marketingPage by lazy {
+        allOnboardingPages.find { it.type == OnboardingPageUiData.Type.MARKETING_DATA }
+    }
+
+    private val pagesToDisplay by lazy {
+        allOnboardingPages
+            .filterNot {
+                it.type == OnboardingPageUiData.Type.MARKETING_DATA &&
+                    !requireComponents.settings.shouldShowMarketingOnboarding
+            }
+            .distinctBy { it.type }
+            .toMutableStateList()
     }
 
     private fun displayDefaultBrowserPage(context: Context): Boolean = isNotDefaultBrowser(context)
 
     private val telemetryRecorder by lazy {
         OnboardingTelemetryRecorder(
-            onboardingReason = if (requireComponents.settings.enablePersistentOnboarding) {
-                OnboardingReason.EXISTING_USER
-            } else {
-                OnboardingReason.NEW_USER
-            },
-            installSource = installSourcePackage(
-                packageManager = requireContext().application.packageManager,
-                packageName = requireContext().application.packageName,
-            ),
+            onboardingReason =
+                if (requireComponents.settings.enablePersistentOnboarding) {
+                    OnboardingReason.EXISTING_USER
+                } else {
+                    OnboardingReason.NEW_USER
+                },
+            installSource =
+                installSourcePackage(
+                    packageManager = requireContext().application.packageManager,
+                    packageName = requireContext().application.packageName,
+                ),
         )
     }
 
-    private val onboardingStore by fragmentStore(OnboardingState()) {
-        OnboardingStore(
-            initialState = it,
-            middleware = listOf(
-                OnboardingPreferencesMiddleware(
-                    repository = DefaultOnboardingPreferencesRepository(
-                        context = requireContext(),
-                        lifecycleOwner = viewLifecycleOwner,
+    private val onboardingStore by
+        fragmentStore(OnboardingState()) {
+            OnboardingStore(
+                initialState = it,
+                middleware =
+                    listOf(
+                        OnboardingPreferencesMiddleware(
+                            repository =
+                                DefaultOnboardingPreferencesRepository(
+                                    context = requireContext(),
+                                    lifecycleOwner = viewLifecycleOwner,
+                                )
+                        )
                     ),
-                ),
-            ),
-        )
-    }
+            )
+        }
 
     private val defaultBrowserPromptStorage by lazy { DefaultDefaultBrowserPromptStorage(requireContext()) }
     private val defaultBrowserPromptManager by lazy {
@@ -176,13 +194,15 @@ class OnboardingFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        removeMarketingFeature.set(
-            feature = MarketingPageRemovalSupport(
-                prefKey = requireContext().getString(R.string.pref_key_should_show_marketing_onboarding),
-                pagesToDisplay = pagesToDisplay,
-                settings = requireComponents.settings,
-                lifecycleOwner = viewLifecycleOwner,
-            ),
+        addMarketingFeature.set(
+            feature =
+                MarketingPageAdditionSupport(
+                    prefKey = requireContext().getString(R.string.pref_key_should_show_marketing_onboarding),
+                    pagesToDisplay = pagesToDisplay,
+                    marketingPage = marketingPage,
+                    settings = requireComponents.settings,
+                    lifecycleOwner = viewLifecycleOwner,
+                ),
             owner = this,
             view = view,
         )
@@ -217,6 +237,7 @@ class OnboardingFragment : Fragment() {
     private fun ScreenContent() {
         OnboardingScreen(
             pagesToDisplay = pagesToDisplay,
+            initialPageIndex = requireComponents.settings.onboardingCurrentPageIndex,
             onMakeFirefoxDefaultClick = {
                 promptToSetAsDefaultBrowser()
             },
@@ -227,12 +248,14 @@ class OnboardingFragment : Fragment() {
                 )
             },
             onSignInButtonClick = {
-                findNavController().nav(
-                    id = R.id.onboardingFragment,
-                    directions = OnboardingFragmentDirections.actionGlobalTurnOnSync(
-                        entrypoint = FenixFxAEntryPoint.NewUserOnboarding,
-                    ),
-                )
+                findNavController()
+                    .nav(
+                        id = R.id.onboardingFragment,
+                        directions =
+                            OnboardingFragmentDirections.actionGlobalTurnOnSync(
+                                entrypoint = FenixFxAEntryPoint.NewUserOnboarding
+                            ),
+                    )
                 telemetryRecorder.onSyncSignInClick(
                     sequenceId = pagesToDisplay.telemetrySequenceId(),
                     sequencePosition = pagesToDisplay.sequencePosition(OnboardingPageUiData.Type.SYNC_SIGN_IN),
@@ -282,10 +305,7 @@ class OnboardingFragment : Fragment() {
                     sequencePosition = pagesToDisplay.sequencePosition(it.type),
                 )
 
-                defaultBrowserPromptManager.maybePromptToSetAsDefaultBrowser(
-                    pagesToDisplay = pagesToDisplay,
-                    currentCard = it,
-                )
+                defaultBrowserPromptManager.maybePromptToSetAsDefaultBrowser(it)
             },
             onboardingStore = onboardingStore,
             termsOfServiceEventHandler = termsOfServiceEventHandler,
@@ -301,10 +321,11 @@ class OnboardingFragment : Fragment() {
             onMarketingDataLearnMoreClick = {
                 telemetryRecorder.onMarketingDataLearnMoreClick()
 
-                val url = SupportUtils.getSumoURLForTopic(
-                    requireContext(),
-                    SupportUtils.SumoTopic.MARKETING_DATA,
-                )
+                val url =
+                    SupportUtils.getSumoURLForTopic(
+                        requireContext(),
+                        SupportUtils.SumoTopic.MARKETING_DATA,
+                    )
                 launchSandboxCustomTab(url)
             },
             onMarketingOptInToggle = { optIn ->
@@ -321,7 +342,7 @@ class OnboardingFragment : Fragment() {
                 telemetryRecorder.onMarketingDataSkipClicked()
             },
             currentIndex = { index ->
-                removeMarketingFeature.withFeature { it.currentPageIndex = index }
+                requireComponents.settings.onboardingCurrentPageIndex = index
             },
             onNavigateToNextPage = {
                 telemetryRecorder.onNavigatedToNextPage()
@@ -372,7 +393,8 @@ class OnboardingFragment : Fragment() {
         requireComponents.fenixOnboarding.finish()
 
         val settings = requireComponents.settings
-        settings.onboardingCompletedTimestamp = System.currentTimeMillis()
+        settings.recordOnboardingCompleted()
+        settings.onboardingCurrentPageIndex = 0
 
         // Telemetry and daily usage ping get enabled after ToU acceptance.
         startMetricsIfEnabled(
@@ -383,10 +405,11 @@ class OnboardingFragment : Fragment() {
             isDailyUsagePingEnabled = false,
         )
 
-        findNavController().nav(
-            id = R.id.onboardingFragment,
-            directions = OnboardingFragmentDirections.actionHome(),
-        )
+        findNavController()
+            .nav(
+                id = R.id.onboardingFragment,
+                directions = OnboardingFragmentDirections.actionHome(),
+            )
 
         val downloadUrl = settings.rtamoAddonDownloadUrl
         if (downloadUrl.isNotBlank()) {
@@ -397,8 +420,8 @@ class OnboardingFragment : Fragment() {
                         name = settings.rtamoAddonName,
                         iconUrl = settings.rtamoAddonImageUrl,
                         installationMethod = InstallationMethod.RTAMO,
-                    ),
-                ),
+                    )
+                )
             )
         }
         settings.rtamoAddonDownloadUrl = ""
@@ -408,12 +431,11 @@ class OnboardingFragment : Fragment() {
         maybeAddMenuNotification()
     }
 
-    private fun isNotDefaultBrowser(context: Context) =
-        !Browsers.isDefaultBrowser(context)
+    private fun isNotDefaultBrowser(context: Context) = !Browsers.isDefaultBrowser(context)
 
     private fun canShowNotificationPage(context: Context) =
-        !NotificationManagerCompat.from(context.applicationContext)
-            .areNotificationsEnabledSafe() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        !NotificationManagerCompat.from(context.applicationContext).areNotificationsEnabledSafe() &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     private fun pagesToDisplay(
         showDefaultBrowserPage: Boolean,
@@ -430,35 +452,33 @@ class OnboardingFragment : Fragment() {
                 showAddWidgetPage,
                 requireComponents.settings.isTabStripEnabled.not(),
                 jexlConditions,
-            ) { condition -> jexlHelper.evalJexlSafe(condition) }
+            ) { condition ->
+                jexlHelper.evalJexlSafe(condition)
+            }
         }
     }
 
     private fun promptToSetAsDefaultBrowser() {
         activity?.openSetDefaultBrowserOption(useCustomTab = true)
         requireComponents.settings.coldStartsBetweenSetAsDefaultPrompts = 0
-        requireComponents.settings.lastSetAsDefaultPromptShownTimeInMillis = System.currentTimeMillis()
+        requireComponents.settings.recordSetAsDefaultPromptShownTime()
         telemetryRecorder.onSetToDefaultClick(
             sequenceId = pagesToDisplay.telemetrySequenceId(),
             sequencePosition = pagesToDisplay.sequencePosition(OnboardingPageUiData.Type.DEFAULT_BROWSER),
         )
     }
 
-    private fun launchSandboxCustomTab(url: String) =
-        SupportUtils.launchSandboxCustomTab(requireContext(), url)
+    private fun launchSandboxCustomTab(url: String) = SupportUtils.launchSandboxCustomTab(requireContext(), url)
 
     private fun showPrivacyPreferencesDialog() {
-        ManagePrivacyPreferencesDialogFragment()
-            .show(parentFragmentManager, ManagePrivacyPreferencesDialogFragment.TAG)
+        ManagePrivacyPreferencesDialogFragment().show(parentFragmentManager, ManagePrivacyPreferencesDialogFragment.TAG)
     }
 
     private fun maybeAddMenuNotification() {
         with(requireContext()) {
             if (shouldAddMenuNotification()) {
                 requireComponents.appStore.dispatch(
-                    AppAction.MenuNotification.AddMenuNotification(
-                        SupportedMenuNotifications.NotDefaultBrowser,
-                    ),
+                    AppAction.MenuNotification.AddMenuNotification(SupportedMenuNotifications.NotDefaultBrowser)
                 )
             }
         }

@@ -6,7 +6,11 @@ package org.mozilla.fenix.components.metrics
 
 import android.util.Base64
 import androidx.annotation.VisibleForTesting
-import com.google.android.gms.ads.identifier.AdvertisingIdClient
+import java.io.IOException
+import java.security.NoSuchAlgorithmException
+import java.security.spec.InvalidKeySpecException
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.search.SearchEngine
@@ -14,25 +18,17 @@ import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.experiments.nimbus.NimbusEventStore
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.Metrics
-import java.io.IOException
-import java.security.NoSuchAlgorithmException
-import java.security.spec.InvalidKeySpecException
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.PBEKeySpec
 
 /**
- * A utility object for recording various metrics related to user interactions
- * within the application. This includes metrics for searches, bookmark actions,
- * and generating hashed identifiers for advertising purposes.
+ * A utility object for recording various metrics related to user interactions within the application. This includes
+ * metrics for searches, bookmark actions, and generating hashed identifiers for advertising purposes.
  *
  * This object provides helper functions to:
- * - Record search metrics, categorizing them by search engine, source, and whether
- *   the engine is the default.
- * - Record bookmark action metrics, such as adding, editing, deleting, or opening
- *   bookmarks, along with the source of the action.
- * - Retrieve and hash the Google Advertising ID, allowing for a privacy-preserving
- *   way to track users across different products while ensuring different identifiers
- *   for each product.
+ * - Record search metrics, categorizing them by search engine, source, and whether the engine is the default.
+ * - Record bookmark action metrics, such as adding, editing, deleting, or opening bookmarks, along with the source of
+ *   the action.
+ * - Retrieve and hash the Google Advertising ID, allowing for a privacy-preserving way to track users across different
+ *   products while ensuring different identifiers for each product.
  */
 object MetricsUtils {
     // The number of iterations to compute the hash. RFC 2898 suggests
@@ -40,11 +36,15 @@ object MetricsUtils {
     private const val PBKDF2_ITERATIONS = 1000
     private const val PBKDF2_KEY_LEN_BITS = 256
 
-    /**
-     * Possible sources for a performed search.
-     */
+    /** Possible sources for a performed search. */
     enum class Source {
-        ACTION, SHORTCUT, SUGGESTION, TOPSITE, WIDGET, DIGITAL_ASSISTANT, NONE
+        ACTION,
+        SHORTCUT,
+        SUGGESTION,
+        TOPSITE,
+        WIDGET,
+        DIGITAL_ASSISTANT,
+        NONE,
     }
 
     /**
@@ -61,25 +61,27 @@ object MetricsUtils {
         searchAccessPoint: Source,
         nimbusEventStore: NimbusEventStore,
     ) {
-        val telemetryId = if (engine.type == SearchEngine.Type.CUSTOM) {
-            "custom"
-        } else {
-            val baseId = engine.id.lowercase()
-            if (!engine.telemetrySuffix.isNullOrEmpty()) {
-                "$baseId-${engine.telemetrySuffix}"
+        val telemetryId =
+            if (engine.type == SearchEngine.Type.CUSTOM) {
+                "custom"
             } else {
-                baseId
+                val baseId = engine.id.lowercase()
+                if (!engine.telemetrySuffix.isNullOrEmpty()) {
+                    "$baseId-${engine.telemetrySuffix}"
+                } else {
+                    baseId
+                }
             }
-        }
         val source = searchAccessPoint.name.lowercase()
 
         Metrics.searchCount["$telemetryId.$source"].add()
 
-        val performedSearchExtra = if (isDefault) {
-            "default.$source"
-        } else {
-            "shortcut.$source"
-        }
+        val performedSearchExtra =
+            if (isDefault) {
+                "default.$source"
+            } else {
+                "shortcut.$source"
+            }
 
         Events.performedSearch.record(Events.PerformedSearchExtra(performedSearchExtra))
         nimbusEventStore.recordEvent("performed_search")
@@ -88,10 +90,10 @@ object MetricsUtils {
     /**
      * Records appropriate metrics for adding a bookmark.
      *
-     * Note: this was split off from [recordBookmarkMetrics], because [nimbusEventStore] was needed only
-     * for the case of adding a bookmark. There was no good way to do it in [recordBookmarkMetrics] without
-     * either unnecessarily requiring [nimbusEventStore] from callers that only do edits/deletes/opens
-     * or making [nimbusEventStore] nullable which makes it possible to accidentally skip recording the event in Nimbus.
+     * Note: this was split off from [recordBookmarkMetrics], because [nimbusEventStore] was needed only for the case of
+     * adding a bookmark. There was no good way to do it in [recordBookmarkMetrics] without either unnecessarily
+     * requiring [nimbusEventStore] from callers that only do edits/deletes/opens or making [nimbusEventStore] nullable
+     * which makes it possible to accidentally skip recording the event in Nimbus.
      *
      * @param source Describes where the action was called from.
      * @param nimbusEventStore [NimbusEventStore] used to record the event for use in behavioral targeting.
@@ -112,6 +114,7 @@ object MetricsUtils {
 
     /**
      * Records the appropriate metric for performed Bookmark action.
+     *
      * @param action The [BookmarkAction] being counted.
      * @param source Describes where the action was called from.
      */
@@ -126,15 +129,13 @@ object MetricsUtils {
         }
     }
 
-    /**
-     * Describes which bookmark action is being recorded.
-     */
+    /** Describes which bookmark action is being recorded. */
     enum class BookmarkAction {
-        EDIT, DELETE, OPEN;
+        EDIT,
+        DELETE,
+        OPEN;
 
-        /**
-         * Possible sources for a bookmark action.
-         */
+        /** Possible sources for a bookmark action. */
         enum class Source {
             ADD_BOOKMARK_TOAST,
             BOOKMARK_EDIT_PAGE,
@@ -150,10 +151,7 @@ object MetricsUtils {
 
     private fun BookmarkAction.Source.label() = name.lowercase()
 
-    /**
-     * Get the default salt to use for hashing. This is a convenience
-     * function to help with unit tests.
-     */
+    /** Get the default salt to use for hashing. This is a convenience function to help with unit tests. */
     @Suppress("FunctionOnlyReturningConstant")
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal fun getHashingSalt(): String = "org.mozilla.fenix-salt"
@@ -161,8 +159,8 @@ object MetricsUtils {
     /**
      * Query the Google Advertising API to get the Google Advertising ID.
      *
-     * This is meant to be used off the main thread. The API will throw an
-     * exception and we will print a log message otherwise.
+     * This is meant to be used off the main thread. The API will throw an exception and we will print a log message
+     * otherwise.
      *
      * @param retrieveAdvertisingIdInfo A lambda function that retrieves the advertising ID.
      * @return a String containing the Google Advertising ID or null.
@@ -186,24 +184,20 @@ object MetricsUtils {
     }
 
     /**
-     * Produces a hashed version of the Google Advertising ID.
-     * We want users using more than one of our products to report a different
-     * ID in each of them. This function runs off the main thread and is CPU-bound.
+     * Produces a hashed version of the Google Advertising ID. We want users using more than one of our products to
+     * report a different ID in each of them. This function runs off the main thread and is CPU-bound.
      *
-     * The `customSalt` parameter allows for dynamic setting of the salt for
-     * certain experiments or any one-off applications.
+     * The `customSalt` parameter allows for dynamic setting of the salt for certain experiments or any one-off
+     * applications.
      *
      * @param retrieveAdvertisingIdInfo A function that retrieves the Google Advertising ID.
-     * @param encodeToString A function responsible for encoding a byte array to a string.
-     *                       It accepts two arguments:
-     *                       1. `data`: The `ByteArray` to be encoded.
-     *                       2. `flag`: An `Int` representing encoder flag bit
-     *                                  to control the encoding process.
-     *                                  (e.g., `Base64.NO_WRAP`).
-     * @param customSalt An optional custom salt to use for hashing. If not provided,
-     *                   a default salt will be used.
-     * @return a hashed and salted Google Advertising ID or null if it was not possible
-     *         to get the Google Advertising ID or if an error occurred during hashing.
+     * @param encodeToString A function responsible for encoding a byte array to a string. It accepts two arguments:
+     *     1. `data`: The `ByteArray` to be encoded.
+     *     2. `flag`: An `Int` representing encoder flag bit to control the encoding process. (e.g., `Base64.NO_WRAP`).
+     *
+     * @param customSalt An optional custom salt to use for hashing. If not provided, a default salt will be used.
+     * @return a hashed and salted Google Advertising ID or null if it was not possible to get the Google Advertising ID
+     *   or if an error occurred during hashing.
      */
     suspend fun getHashedIdentifier(
         retrieveAdvertisingIdInfo: () -> String?,
@@ -223,12 +217,13 @@ object MetricsUtils {
                     // Note that we intentionally want to use slow hashing functions here in order
                     // to increase the cost of potentially repeatedly guess the original unhashed
                     // identifier.
-                    val keySpec = PBEKeySpec(
-                        unhashedID.toCharArray(),
-                        salt.toByteArray(),
-                        PBKDF2_ITERATIONS,
-                        PBKDF2_KEY_LEN_BITS,
-                    )
+                    val keySpec =
+                        PBEKeySpec(
+                            unhashedID.toCharArray(),
+                            salt.toByteArray(),
+                            PBKDF2_ITERATIONS,
+                            PBKDF2_KEY_LEN_BITS,
+                        )
 
                     val keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")
                     val hashedBytes = keyFactory.generateSecret(keySpec).encoded
@@ -248,4 +243,10 @@ object MetricsUtils {
                 }
             }
         }
+
+    /** Enum marking the access point of the Tab Groups feature, for telemetry. */
+    enum class TabGroupAccessPoint {
+        TABS_TRAY,
+        BROWSER_MENU,
+    }
 }

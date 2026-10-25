@@ -5,8 +5,8 @@
 package org.mozilla.fenix.components.share
 
 /**
- * Enum representing the different surfaces from which the native share sheet can be opened, used for
- * telemetry purposes.
+ * Enum representing the different surfaces from which the native share sheet can be opened, used for telemetry
+ * purposes.
  */
 enum class ShareSource(val value: String) {
     BROWSER_MENU("browser_menu"),
@@ -20,4 +20,5 @@ enum class ShareSource(val value: String) {
     RECENTLY_CLOSED("recently_closed"),
     DEEP_LINK("deep_link"),
     WEB_SHARE("web_share"),
+    CONTEXT_MENU_LINK("context_menu_link"),
 }

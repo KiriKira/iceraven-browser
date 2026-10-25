@@ -29,6 +29,9 @@ public class Adjust {
     public static void initSdk(AdjustConfig adjustConfig) {
     }
 
+    public static void trackEvent(AdjustEvent adjustEvent) {
+    }
+
     public static void onResume() {
     }
 

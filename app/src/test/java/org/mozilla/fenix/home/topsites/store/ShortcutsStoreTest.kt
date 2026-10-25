@@ -13,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 
 @RunWith(AndroidJUnit4::class)
 class ShortcutsStoreTest {
@@ -42,9 +43,7 @@ class ShortcutsStoreTest {
 
         assertTrue(store.state.topSites.isEmpty())
 
-        val topSites = listOf(
-            TopSite.Pinned(id = 1L, title = "Mozilla", url = "https://mozilla.org", createdAt = 0),
-        )
+        val topSites = listOf(TopSite.Pinned(id = 1L, title = "Mozilla", url = "https://mozilla.org", createdAt = 0))
         store.dispatch(ShortcutsAction.UpdateTopSites(topSites))
 
         assertEquals(topSites, store.state.topSites)
@@ -56,9 +55,7 @@ class ShortcutsStoreTest {
 
         assertTrue(store.state.popularSites.isEmpty())
 
-        val popularSites = listOf(
-            PopularSite(title = "Mozilla", url = "https://mozilla.org", iconUrl = null),
-        )
+        val popularSites = listOf(PopularSite(title = "Mozilla", url = "https://mozilla.org", iconUrl = null))
         store.dispatch(ShortcutsAction.UpdatePopularSites(popularSites))
 
         assertEquals(popularSites, store.state.popularSites)
@@ -88,9 +85,8 @@ class ShortcutsStoreTest {
 
     @Test
     fun `WHEN ShowAddShortcutDialog action is dispatched THEN dialogState is updated`() = runTest {
-        val store = ShortcutsStore(
-            initialState = ShortcutsState.INITIAL.copy(dialogState = DialogState.AddShortcutBottomSheet),
-        )
+        val store =
+            ShortcutsStore(initialState = ShortcutsState.INITIAL.copy(dialogState = DialogState.AddShortcutBottomSheet))
 
         store.dispatch(ShortcutsAction.ShowAddShortcutDialog)
 
@@ -99,9 +95,7 @@ class ShortcutsStoreTest {
 
     @Test
     fun `WHEN CloseDialog action is dispatched THEN dialogState is updated`() = runTest {
-        val store = ShortcutsStore(
-            initialState = ShortcutsState.INITIAL.copy(dialogState = DialogState.AddShortcut),
-        )
+        val store = ShortcutsStore(initialState = ShortcutsState.INITIAL.copy(dialogState = DialogState.AddShortcut))
 
         store.dispatch(ShortcutsAction.CloseDialog)
 
@@ -113,7 +107,13 @@ class ShortcutsStoreTest {
         val initialState = ShortcutsState.INITIAL.copy(dialogState = DialogState.AddShortcut)
         val store = ShortcutsStore(initialState = initialState)
 
-        store.dispatch(ShortcutsAction.SaveShortcut(title = "Mozilla", url = "https://mozilla.org"))
+        store.dispatch(
+            ShortcutsAction.SaveShortcut(
+                title = "Mozilla",
+                url = "https://mozilla.org",
+                source = AddShortcutSource.MANUAL,
+            )
+        )
 
         assertEquals(initialState, store.state)
     }

@@ -6,23 +6,30 @@ package org.mozilla.fenix.summarization
 
 import io.mockk.every
 import io.mockk.mockk
+import kotlin.test.assertNotNull
 import mozilla.components.concept.llm.Llm
 import mozilla.components.concept.llm.LlmProvider
 import mozilla.components.feature.summarize.ContentExtracted
+import mozilla.components.feature.summarize.LlmProviderAction
 import mozilla.components.feature.summarize.OffDeviceSummarizationShakeConsentAction
+import mozilla.components.feature.summarize.ReceivedParsedDocument
 import mozilla.components.feature.summarize.SummarizationAction
 import mozilla.components.feature.summarize.SummarizationCompleted
 import mozilla.components.feature.summarize.SummarizationFailed
 import mozilla.components.feature.summarize.SummarizationRequested
 import mozilla.components.feature.summarize.SummarizationState
+import mozilla.components.feature.summarize.SummaryFeedback
+import mozilla.components.feature.summarize.SummaryFeedbackProvided
 import mozilla.components.feature.summarize.ViewAppeared
 import mozilla.components.feature.summarize.ViewDismissed
 import mozilla.components.feature.summarize.content.Content
 import mozilla.components.feature.summarize.content.PageMetadata
+import mozilla.components.feature.summarize.content.PaywalledContentException
 import mozilla.components.lib.llm.mlpa.service.RateLimited
 import mozilla.components.lib.state.Store
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -31,18 +38,15 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.AiSummarize
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
-import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class SummarizationTelemetryMiddlewareTest {
 
-    @get:Rule
-    val gleanTestRule = FenixGleanTestRule(testContext)
+    @get:Rule val gleanTestRule = FenixGleanTestRule(testContext)
 
     private lateinit var middleware: SummarizationTelemetryMiddleware
 
-    private val store =
-        mockk<Store<SummarizationState, SummarizationAction>>(relaxed = true)
+    private val store = mockk<Store<SummarizationState, SummarizationAction>>(relaxed = true)
 
     @Before
     fun setup() {
@@ -94,17 +98,18 @@ class SummarizationTelemetryMiddlewareTest {
         every { store.state } returns SummarizationState.Inert(initializedWithShake = false)
         invokeMiddleware(ViewAppeared)
         invokeMiddleware(
-            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL))),
+            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL)))
         )
         invokeMiddleware(
             createContentExtractedAction(
                 content = "hello world foo",
-                pageMetadata = PageMetadata(
-                    structuredDataTypes = listOf("recipe"),
-                    wordCount = 120,
-                    language = "en",
-                ),
-            ),
+                pageMetadata =
+                    PageMetadata(
+                        structuredDataTypes = listOf("recipe"),
+                        wordCount = 120,
+                        language = "en",
+                    ),
+            )
         )
 
         val snapshot = AiSummarize.started.testGetValue()!!
@@ -135,6 +140,30 @@ class SummarizationTelemetryMiddlewareTest {
         assertNull(extras["error_type"])
         assertNull(extras["error_code"])
         assertNotNull(extras["summarize_duration_ms"])
+    }
+
+    @Test
+    fun `WHEN SummarizationFailed with a paywalled page THEN error_type identifies the paywall and no content metrics are recorded`() {
+        assertNull(AiSummarize.completed.testGetValue())
+
+        // A gated page never reaches ContentExtracted, so the session carries no content metrics.
+        every { store.state } returns SummarizationState.Inert(initializedWithShake = false)
+        invokeMiddleware(ViewAppeared)
+        invokeMiddleware(
+            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL)))
+        )
+        invokeMiddleware(SummarizationFailed(PaywalledContentException()))
+
+        val snapshot = AiSummarize.completed.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        val extras = snapshot.first().extra!!
+        assertEquals("false", extras["success"])
+        assertEquals(TEST_MODEL, extras["model"])
+        assertEquals("PaywalledContentException", extras["error_type"])
+        assertEquals("9999", extras["error_code"])
+        assertNull(extras["content_type"])
+        assertNull(extras["length_words"])
     }
 
     @Test
@@ -204,7 +233,7 @@ class SummarizationTelemetryMiddlewareTest {
         every { store.state } returns SummarizationState.Inert(initializedWithShake = false)
         invokeMiddleware(ViewAppeared)
         invokeMiddleware(
-            SummarizationRequested(LlmProvider.Info(nameRes = 99, modelId = LlmProvider.ModelID("another-model"))),
+            SummarizationRequested(LlmProvider.Info(nameRes = 99, modelId = LlmProvider.ModelID("another-model")))
         )
         invokeMiddleware(ViewDismissed(true))
 
@@ -274,11 +303,124 @@ class SummarizationTelemetryMiddlewareTest {
         assertEquals("CELLULAR", extras["connection_type"])
     }
 
+    @Test
+    fun `WHEN events are recorded across a session THEN they share the same session_id`() {
+        setupFullSession()
+        invokeMiddleware(SummarizationCompleted)
+        invokeMiddleware(ViewDismissed(true))
+
+        val requestedSessionId = AiSummarize.requested.testGetValue()!!.first().extra!!["session_id"]
+        val startedSessionId = AiSummarize.started.testGetValue()!!.first().extra!!["session_id"]
+        val completedSessionId = AiSummarize.completed.testGetValue()!!.first().extra!!["session_id"]
+        val closedSessionId = AiSummarize.closed.testGetValue()!!.first().extra!!["session_id"]
+
+        assertNotNull(requestedSessionId)
+        assertEquals(requestedSessionId, startedSessionId)
+        assertEquals(requestedSessionId, completedSessionId)
+        assertEquals(requestedSessionId, closedSessionId)
+    }
+
+    @Test
+    fun `GIVEN separate middleware instances WHEN each records an event THEN session_ids differ`() {
+        invokeMiddleware(ViewAppeared)
+        val firstSessionId = AiSummarize.requested.testGetValue()!!.first().extra!!["session_id"]
+
+        middleware = SummarizationTelemetryMiddleware(ConnectionType.WIFI)
+        invokeMiddleware(ViewAppeared)
+        val secondSessionId = AiSummarize.requested.testGetValue()!!.last().extra!!["session_id"]
+
+        assertNotNull(firstSessionId)
+        assertNotNull(secondSessionId)
+        assertNotEquals(firstSessionId, secondSessionId)
+    }
+
+    @Test
+    fun `WHEN ProviderInitialized is dispatched THEN provider_initialized is recorded with model and session_id`() {
+        assertNull(AiSummarize.providerInitialized.testGetValue())
+
+        invokeMiddleware(ViewAppeared)
+        invokeMiddleware(
+            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL)))
+        )
+        invokeMiddleware(LlmProviderAction.ProviderInitialized(mockk()))
+
+        val snapshot = AiSummarize.providerInitialized.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        val extras = snapshot.first().extra!!
+        assertEquals(TEST_MODEL, extras["model"])
+        assertNotNull(extras["session_id"])
+    }
+
+    @Test
+    fun `WHEN the first ReceivedParsedDocument is dispatched THEN first_response is recorded once`() {
+        assertNull(AiSummarize.firstResponse.testGetValue())
+
+        setupFullSession()
+        invokeMiddleware(ReceivedParsedDocument(mockk()))
+        invokeMiddleware(ReceivedParsedDocument(mockk()))
+
+        val snapshot = AiSummarize.firstResponse.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        val extras = snapshot.first().extra!!
+        assertEquals(TEST_MODEL, extras["model"])
+        assertNotNull(extras["session_id"])
+    }
+
+    @Test
+    fun `WHEN good feedback is provided THEN feedback is recorded with rating good and model`() {
+        assertNull(AiSummarize.feedback.testGetValue())
+
+        setupFullSession()
+        invokeMiddleware(SummaryFeedbackProvided(SummaryFeedback.GOOD))
+
+        val snapshot = AiSummarize.feedback.testGetValue()!!
+        assertEquals(1, snapshot.size)
+
+        val extras = snapshot.first().extra!!
+        assertEquals("good", extras["rating"])
+        assertEquals(TEST_MODEL, extras["model"])
+        assertNotNull(extras["session_id"])
+    }
+
+    @Test
+    fun `WHEN bad feedback is provided THEN feedback is recorded with rating bad`() {
+        assertNull(AiSummarize.feedback.testGetValue())
+
+        setupFullSession()
+        invokeMiddleware(SummaryFeedbackProvided(SummaryFeedback.BAD))
+
+        val extras = AiSummarize.feedback.testGetValue()!!.first().extra!!
+        assertEquals("bad", extras["rating"])
+    }
+
+    @Test
+    fun `WHEN the rating is changed THEN each rating is recorded with the same session id`() {
+        setupFullSession()
+        invokeMiddleware(SummaryFeedbackProvided(SummaryFeedback.BAD))
+        invokeMiddleware(SummaryFeedbackProvided(SummaryFeedback.GOOD))
+
+        val snapshot = AiSummarize.feedback.testGetValue()!!
+        assertEquals(2, snapshot.size)
+        assertEquals("bad", snapshot[0].extra!!["rating"])
+        assertEquals("good", snapshot[1].extra!!["rating"])
+        assertEquals(snapshot[0].extra!!["session_id"], snapshot[1].extra!!["session_id"])
+    }
+
+    @Test
+    fun `WHEN the summary is never rated THEN no feedback is recorded`() {
+        setupFullSession()
+        invokeMiddleware(ViewDismissed(true))
+
+        assertNull(AiSummarize.feedback.testGetValue())
+    }
+
     private fun setupFullSession() {
         every { store.state } returns SummarizationState.Inert(initializedWithShake = false)
         invokeMiddleware(ViewAppeared)
         invokeMiddleware(
-            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL))),
+            SummarizationRequested(LlmProvider.Info(nameRes = 42, modelId = LlmProvider.ModelID(TEST_MODEL)))
         )
         invokeMiddleware(createContentExtractedAction())
     }

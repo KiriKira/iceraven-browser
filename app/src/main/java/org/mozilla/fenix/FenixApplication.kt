@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix
 
-import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
@@ -18,6 +17,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.Composable
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.emoji2.text.DefaultEmojiCompatConfig
@@ -25,13 +25,16 @@ import androidx.emoji2.text.EmojiCompat
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration.Builder
 import androidx.work.Configuration.Provider
+import androidx.work.DelegatingWorkerFactory
+import java.util.Date
+import java.util.concurrent.TimeUnit
+import kotlin.math.roundToLong
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -41,10 +44,11 @@ import mozilla.appservices.autofill.AutofillApiException
 import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.SearchAction.SearchConfigurationAvailabilityChanged
 import mozilla.components.browser.state.action.SystemAction
-import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.selectedOrDefaultPrivateSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.GlobalPlacesDependencyProvider
+import mozilla.components.compose.base.theme.Theme
+import mozilla.components.compose.base.theme.Theme.Private
 import mozilla.components.concept.ai.controls.isEnabled
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.engine.webextension.WebExtension
@@ -67,6 +71,7 @@ import mozilla.components.service.sync.autofill.GlobalAutofillDependencyProvider
 import mozilla.components.service.sync.logins.GlobalLoginsDependencyProvider
 import mozilla.components.service.sync.logins.LoginsApiException
 import mozilla.components.support.AppServicesInitializer
+import mozilla.components.support.AppServicesInitializer.Config as AppServicesConfig
 import mozilla.components.support.base.ext.areNotificationsEnabledSafe
 import mozilla.components.support.base.ext.isNotificationChannelEnabled
 import mozilla.components.support.base.facts.register
@@ -113,6 +118,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.isCustomEngine
 import org.mozilla.fenix.ext.isKnownSearchDomain
+import org.mozilla.fenix.home.collections.migration.CollectionsToTabGroupsMigrationWorker
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_LIMIT
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_MAX_THRESHOLD
 import org.mozilla.fenix.lifecycle.StoreLifecycleObserver
@@ -125,6 +131,7 @@ import org.mozilla.fenix.perf.ProfilerMarkerFactProcessor
 import org.mozilla.fenix.perf.StartupTimeline
 import org.mozilla.fenix.perf.StorageStatsMetrics
 import org.mozilla.fenix.perf.runBlockingIncrement
+import org.mozilla.fenix.privacyreport.PrivacyReportWorkerFactory
 import org.mozilla.fenix.push.PushFxaIntegration
 import org.mozilla.fenix.push.WebPushEngineIntegration
 import org.mozilla.fenix.session.VisibilityLifecycleCallback
@@ -132,23 +139,17 @@ import org.mozilla.fenix.settings.doh.DefaultDohSettingsProvider
 import org.mozilla.fenix.settings.doh.DohSettingsProvider
 import org.mozilla.fenix.startupCrash.StartupCrashActivity
 import org.mozilla.fenix.theme.DefaultThemeProvider
-import org.mozilla.fenix.theme.Theme
-import org.mozilla.fenix.theme.Theme.Private
 import org.mozilla.fenix.theme.ThemeProvider
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import org.mozilla.fenix.wallpapers.Wallpaper
-import java.util.Date
-import java.util.concurrent.TimeUnit
-import kotlin.math.roundToLong
-import mozilla.components.support.AppServicesInitializer.Config as AppServicesConfig
 
 private const val RAM_THRESHOLD_MEGABYTES = 1024
 private const val BYTES_TO_MEGABYTES_CONVERSION = 1024.0 * 1024.0
 
 /**
- * The main application class for Fenix. Records data to measure initialization performance.
- * Installs [CrashReporter], initializes [Glean] in fenix builds and setup [Megazord] in the main process.
+ * The main application class for Fenix. Records data to measure initialization performance. Installs [CrashReporter],
+ * initializes [Glean] in fenix builds and setup [Megazord] in the main process.
  */
 @Suppress("Registered", "TooManyFunctions", "LargeClass")
 open class FenixApplication : Application(), Provider, ThemeProvider {
@@ -168,13 +169,29 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     private val logger = Logger("FenixApplication")
 
-    open val components by lazy { Components(this) }
+    /**
+     * A [CoroutineScope] tied to the application's lifecycle.
+     *
+     * This scope is used for launching long-running or global asynchronous tasks that should survive the destruction of
+     * individual activities. It uses [Dispatchers.Main] as the default dispatcher and a [SupervisorJob] to ensure that
+     * a failure in one child coroutine does not cancel others.
+     */
+    private val applicationScope: CoroutineScope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.Main +
+                CoroutineExceptionHandler { _, throwable ->
+                    logger.error("ApplicationScope: Unhandled error: ${throwable.message}", throwable)
+                }
+        )
+
+    open val components by lazy { Components(this, applicationScope) }
 
     var visibilityLifecycleCallback: VisibilityLifecycleCallback? = null
         private set
 
-    protected val applicationScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     protected val ioDispatcher = Dispatchers.IO
+
     override fun onCreate() {
         super.onCreate()
         initializeFenixProcess()
@@ -191,11 +208,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     /**
-     * Process-level initialization for Fenix and its services. Sets up required native subsystems
-     * such as Nimbus, Glean and Gecko. Note that Robolectric tests override this with an empty
-     * implementation that skips this initialization.
+     * Process-level initialization for Fenix and its services. Sets up required native subsystems such as Nimbus, Glean
+     * and Gecko. Note that Robolectric tests override this with an empty implementation that skips this initialization.
      */
-    @SuppressLint("NewApi")
     protected open fun initializeFenixProcess() {
         // [TIMER] Record the start of the [PerfStartup.applicationOnCreate] metric here. Do this
         // manually because Glean has not started initializing yet. Note that by this point the
@@ -239,6 +254,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 applicationContext.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE)
             }
 
+            // Allow overriding secret settings with values specified in `local.properties` at build time.
+            // This allows developers to opt-in to a set of features for their own workflow.
+            // Only debug build variants populate this BuildConfig value.
+            if (BuildConfig.SECRET_SETTINGS_OVERRIDES.isNotBlank()) {
+                applySecretSettingsOverrides(applicationContext)
+            }
+
             // Initialization is split into two phases based on if libmegazord is fully initialized.
             setupEarlyMain()
             setupPostMegazord()
@@ -251,10 +273,35 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
+    /**
+     * Applies the secret-settings overrides from [BuildConfig.SECRET_SETTINGS_OVERRIDES]. Each entry is a `<preference
+     * key>=<true|false>` pair joined by `;` that forces a secret setting to a fixed value on startup so it does not
+     * have to be toggled manually in the UI.
+     */
+    private fun applySecretSettingsOverrides(context: Context) {
+        context.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE).edit {
+            BuildConfig.SECRET_SETTINGS_OVERRIDES.split(";").forEach { entry ->
+                val parts = entry.split("=").map { it.trim() }
+                if (parts.size != 2) {
+                    logger.warn("Ignoring malformed secret setting override: $entry")
+                    return@forEach
+                }
+
+                val (rawKey, rawValue) = parts
+                val value =
+                    rawValue.toBooleanStrictOrNull()
+                        ?: run {
+                            logger.warn("Ignoring secret setting override with non-boolean value: $entry")
+                            return@forEach
+                        }
+                putBoolean(rawKey, value)
+            }
+        }
+    }
+
     // Begin initialization of Glean if we have data-upload consent, otherwise we will have to
     // wait until we do. Note that Glean initialization is asynchronous any may not be finished
     // when this method returns.
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun maybeInitializeGlean() {
         // We delay the Glean initialization until we have user consent from onboarding.
         // If onboarding is disabled (when in local builds), continue to initialize Glean.
@@ -264,11 +311,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     /**
-     * This phase of main-process initialization runs before application-services is fully setup
-     * so care must be taken. This phases begins loading the Nimbus, Glean, Gecko libraries.
+     * This phase of main-process initialization runs before application-services is fully setup so care must be taken.
+     * This phases begins loading the Nimbus, Glean, Gecko libraries.
      *
-     * By the end of this, application-services, Nimbus and Gecko are initialized. Glean may or may
-     * not be initialized.
+     * By the end of this, application-services, Nimbus and Gecko are initialized. Glean may or may not be initialized.
      */
     private fun setupEarlyMain() {
         // ⚠️ The sequence of CrashReporter / Nimbus / Engine / Glean is particularly subtle due to
@@ -317,8 +363,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         val store = components.core.store
 
         // StartupMetrics accesses shared preferences so do this off thread.
-        @OptIn(DelicateCoroutinesApi::class)
-        GlobalScope.launch(IO) {
+        applicationScope.launch(ioDispatcher) {
             setStartupMetrics(store, components.settings)
         }
 
@@ -354,10 +399,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     /**
-     * The remainder of main-process initialization happens here now that we have ensured the
-     * application-services initialization is completed. This also queues a bunch of follow-up
-     * work to the visualCompletenessQueue that will be run after the Activity has started
-     * rendering.
+     * The remainder of main-process initialization happens here now that we have ensured the application-services
+     * initialization is completed. This also queues a bunch of follow-up work to the visualCompletenessQueue that will
+     * be run after the Activity has started rendering.
      */
     private fun setupPostMegazord() {
         setupLeakCanary()
@@ -367,8 +411,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 logger = logger,
                 analytics = components.analytics,
                 isTelemetryEnabled = components.settings.isTelemetryEnabled,
-                isMarketingTelemetryEnabled = components.settings.isMarketingTelemetryEnabled &&
-                    components.settings.hasMadeMarketingTelemetrySelection,
+                isMarketingTelemetryEnabled =
+                    components.settings.isMarketingTelemetryEnabled &&
+                        components.settings.hasMadeMarketingTelemetrySelection,
                 isDailyUsagePingEnabled = components.settings.isDailyUsagePingEnabled,
             )
         } else {
@@ -393,23 +438,26 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
         initVisualCompletenessQueueAndQueueTasks()
 
-        ProcessLifecycleOwner.get().lifecycle.addObservers(
-            StoreLifecycleObserver(
-                appStore = components.appStore,
-                browserStore = components.core.store,
-            ),
-            VisibilityLifecycleObserver(),
-        )
+        ProcessLifecycleOwner.get()
+            .lifecycle
+            .addObservers(
+                StoreLifecycleObserver(
+                    appStore = components.appStore,
+                    browserStore = components.core.store,
+                ),
+                VisibilityLifecycleObserver(),
+            )
 
         components.analytics.metricsStorage.tryRegisterAsUsageRecorder(this)
 
         CoroutineScope(IO).launch {
             components.useCases.wallpaperUseCases.fetchCurrentWallpaperUseCase.invoke()
         }
+
+        components.tabDataCoordinator.initialize()
     }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun restoreBrowserState() = GlobalScope.launch(Dispatchers.Main) {
+    private fun restoreBrowserState() = applicationScope.launch {
         val store = components.core.store
         val sessionStorage = components.core.sessionStorage
 
@@ -417,7 +465,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
         // Now that we have restored our previous state (if there's one) let's setup auto saving the state while
         // the app is used.
-        sessionStorage.autoSave(store)
+        sessionStorage
+            .autoSave(store)
             .periodicallyInForeground(interval = 30, unit = TimeUnit.SECONDS)
             .whenGoingToBackground()
             .whenSessionsChange()
@@ -456,10 +505,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         queue.runIfReadyOrQueue { block() }
     }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueInitStorageAndServices(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
-            GlobalScope.launch(IO) {
+            applicationScope.launch(ioDispatcher) {
                 logger.info("Running post-visual completeness tasks...")
                 logElapsedTime(logger, "Storage initialization") {
                     components.core.historyStorage.warmUp()
@@ -474,30 +522,29 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     // we can prevent with this.
                     components.core.topSitesStorage.getTopSites(
                         totalSites = components.settings.topSitesMaxLimit,
-                        frecencyConfig = if (FxNimbus.features.homepageHideFrecentTopSites.value().enabled) {
-                            null
-                        } else {
-                            TopSitesFrecencyConfig(
-                                frecencyTresholdOption = FrecencyThresholdOption.SKIP_ONE_TIME_PAGES,
-                            ) {
-                                !it.url.toUri()
-                                    .containsQueryParameters(components.settings.frecencyFilterQuery)
-                            }
-                        },
-                        providerConfig = TopSitesProviderConfig(
-                            showProviderTopSites = components.settings.showContileFeature,
-                            limit = TOP_SITES_PROVIDER_LIMIT,
-                            maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
-                        ),
+                        frecencyConfig =
+                            if (FxNimbus.features.homepageHideFrecentTopSites.value().enabled) {
+                                null
+                            } else {
+                                TopSitesFrecencyConfig(
+                                    frecencyTresholdOption = FrecencyThresholdOption.SKIP_ONE_TIME_PAGES
+                                ) {
+                                    !it.url.toUri().containsQueryParameters(components.settings.frecencyFilterQuery)
+                                }
+                            },
+                        providerConfig =
+                            TopSitesProviderConfig(
+                                showProviderTopSites = components.settings.showContileFeature,
+                                limit = TOP_SITES_PROVIDER_LIMIT,
+                                maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
+                            ),
                     )
 
                     // This service uses `historyStorage`, and so we can only touch it when we know
                     // it's safe to touch `historyStorage. By 'safe', we mainly mean that underlying
                     // places library will be able to load, which requires first running Megazord.init().
                     // The visual completeness tasks are scheduled after the Megazord.init() call.
-                    components.core.historyMetadataService.cleanup(
-                        System.currentTimeMillis() - Core.HISTORY_METADATA_MAX_AGE_IN_MS,
-                    )
+                    components.core.historyMetadataService.cleanup(historyMetadataCleanupCutoff())
 
                     // If Firefox Suggest is enabled, register a worker to periodically ingest
                     // new search suggestions. The worker requires us to have called
@@ -509,10 +556,18 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                         components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
                     }
                 }
+
                 components.core.fileUploadsDirCleaner.cleanUploadsDirectory()
+                components.settings.deletePocketDatabaseIfNeeded()
+                components.settings.deleteReportSiteDomainsDataStoreIfNeeded()
+
+                CollectionsToTabGroupsMigrationWorker.enqueueIfNeeded(
+                    context = this@FenixApplication,
+                    collectionsMigrationRepository = components.collectionsMigrationRepository,
+                )
             }
             // Account manager initialization needs to happen on the main thread.
-            GlobalScope.launch(Dispatchers.Main) {
+            applicationScope.launch {
                 logElapsedTime(logger, "Kicking-off account manager") {
                     components.backgroundServices.accountManager
                 }
@@ -526,47 +581,46 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             }
         }
 
-    private fun queueMetrics(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        // Because it may be slow to capture the storage stats, it might be preferred to
-        // create a WorkManager task for this metric, however, I ran out of
-        // implementation time and WorkManager is harder to test.
-        StorageStatsMetrics.report(this.applicationContext)
-    }
+    private fun queueMetrics(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            // Because it may be slow to capture the storage stats, it might be preferred to
+            // create a WorkManager task for this metric, however, I ran out of
+            // implementation time and WorkManager is harder to test.
+            StorageStatsMetrics.report(applicationContext, applicationScope)
+        }
 
-    @OptIn(DelicateCoroutinesApi::class)
     private fun queueEngineWarmup(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
-            GlobalScope.launch(Dispatchers.Main) {
+            applicationScope.launch {
                 components.core.engine.warmUp()
             }
         }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueIncrementNumberOfAppLaunches(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
-            GlobalScope.launch(IO) {
+            applicationScope.launch(ioDispatcher) {
                 components.settings.numberOfAppLaunches += 1
             }
         }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun queueRestoreLocale(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        GlobalScope.launch(IO) {
-            components.useCases.localeUseCases.restore()
+    private fun queueRestoreLocale(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            applicationScope.launch(ioDispatcher) {
+                components.useCases.localeUseCases.restore()
+            }
         }
-    }
 
-    private fun queueStorageMaintenance(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        // Make sure GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
-        // is called before this call. When app is not running and WorkManager wakes up
-        // the app for the periodic task, it will require a globally provided places storage
-        // to run the maintenance on.
-        components.core.historyStorage.registerStorageMaintenanceWorker()
-        components.core.passwordsStorage.registerStorageMaintenanceWorker()
-        components.core.autofillStorage.registerStorageMaintenanceWorker()
-    }
+    private fun queueStorageMaintenance(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            // Make sure GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
+            // is called before this call. When app is not running and WorkManager wakes up
+            // the app for the periodic task, it will require a globally provided places storage
+            // to run the maintenance on.
+            components.core.historyStorage.registerStorageMaintenanceWorker()
+            components.core.passwordsStorage.registerStorageMaintenanceWorker()
+            components.core.autofillStorage.registerStorageMaintenanceWorker()
+        }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueIntegrityClientWarmUp(queue: RunWhenReadyQueue) {
         // We want to avoid shipping this warmup into UI test builds to reduce quota impact, especially given
         // that the Integrity verdicts will always fail anyway.
@@ -574,40 +628,38 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             return
         }
         runOnVisualCompleteness(queue) {
-            GlobalScope.launch(IO) {
+            applicationScope.launch(ioDispatcher) {
                 components.integrityClient.warmUp()
             }
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class, ExperimentalAndroidComponentsApi::class) // GlobalScope usage
+    @OptIn(ExperimentalAndroidComponentsApi::class)
     private fun queueNimbusFetchInForeground(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
             components.nimbus.geckoPrefHandler.start()
-            GlobalScope.launch(IO) {
-                components.nimbus.sdk.maybeFetchExperiments(
-                    settings = components.settings,
-                )
+            applicationScope.launch(ioDispatcher) {
+                components.nimbus.sdk.maybeFetchExperiments(settings = components.settings)
                 components.nimbus.geckoPrefHandler.getPreferenceStateFromGecko().await()
             }
         }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun queueSuggestIngest(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        GlobalScope.launch(IO) {
-            components.fxSuggest.storage.runStartupIngestion()
+    private fun queueSuggestIngest(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            applicationScope.launch(ioDispatcher) {
+                components.fxSuggest.storage.runStartupIngestion()
+            }
         }
-    }
 
-    private fun queueDownloadWallpapers(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        downloadWallpapers()
-    }
+    private fun queueDownloadWallpapers(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            downloadWallpapers()
+        }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueCollectProcessExitInfo(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
             if (SDK_INT >= Build.VERSION_CODES.R && components.settings.isTelemetryEnabled) {
-                GlobalScope.launch(IO) {
+                applicationScope.launch(ioDispatcher) {
                     ApplicationExitInfoMetrics.recordProcessExits(applicationContext)
                 }
             }
@@ -659,18 +711,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private fun setupCrashReporting(): CrashReporter {
-        return components
-            .analytics
-            .crashReporter
-            .install(this, ::handleCaughtException)
+        return components.analytics.crashReporter.install(this, ::handleCaughtException)
     }
 
     private fun handleCaughtException() {
-        if (
-            isMainProcess() &&
-            components.settings.useNewCrashReporterFlow &&
-            !components.performance.visualCompletenessQueue.isReady()
-        ) {
+        if (isMainProcess() && !components.performance.visualCompletenessQueue.isReady()) {
             val intent = Intent(applicationContext, StartupCrashActivity::class.java)
 
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -688,27 +733,23 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     /**
      * Initiate Megazord sequence! Megazord Battle Mode!
      *
-     * The application-services combined libraries are known as the "megazord". We use the default `full`
-     * megazord - it contains everything that fenix needs, and (currently) nothing more.
+     * The application-services combined libraries are known as the "megazord". We use the default `full` megazord - it
+     * contains everything that fenix needs, and (currently) nothing more.
      *
      * Documentation on what megazords are, and why they're needed:
      * - https://github.com/mozilla/application-services/blob/main/docs/design/megazords.md
      * - https://mozilla.github.io/application-services/book/design/megazords.html
      *
-     * This is the initialization of the megazord without setting up networking, i.e. needing the
-     * engine for networking. This should do the minimum work necessary as it is done on the main
-     * thread, early in the app startup sequence.
+     * This is the initialization of the megazord without setting up networking, i.e. needing the engine for networking.
+     * This should do the minimum work necessary as it is done on the main thread, early in the app startup sequence.
      */
     private fun setupMegazordInitial() {
         // Rust components must be initialized at the very beginning, before any other Rust call, ...
-        AppServicesInitializer.init(
-            AppServicesConfig(components.analytics.crashReporter),
-        )
+        AppServicesInitializer.init(AppServicesConfig(components.analytics.crashReporter))
     }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun setupMegazordNetwork(): Deferred<Unit> {
-        return GlobalScope.async(IO) {
+        return applicationScope.async(ioDispatcher) {
             if (Config.channel.isDebug) {
                 RustHttpConfig.allowEmulatorLoopback()
             }
@@ -723,7 +764,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
-    @SuppressLint("NewApi")
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
 
@@ -737,12 +777,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 Breadcrumb(
                     category = "Memory",
                     message = "onTrimMemory()",
-                    data = mapOf(
-                        "level" to level.toString(),
-                        "main" to isMainProcess().toString(),
-                    ),
+                    data =
+                        mapOf(
+                            "level" to level.toString(),
+                            "main" to isMainProcess().toString(),
+                        ),
                     level = Breadcrumb.Level.INFO,
-                ),
+                )
             )
 
             components.core.icons.onTrimMemory(level)
@@ -767,36 +808,24 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         val settings = components.settings
         when {
             settings.shouldUseLightTheme -> {
-                AppCompatDelegate.setDefaultNightMode(
-                    AppCompatDelegate.MODE_NIGHT_NO,
-                )
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             }
-            settings.shouldUseDarkTheme -> {
-                AppCompatDelegate.setDefaultNightMode(
-                    AppCompatDelegate.MODE_NIGHT_YES,
-                )
+            settings.shouldUseDarkTheme || settings.shouldUseOledTheme -> {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             }
             SDK_INT < Build.VERSION_CODES.P && settings.shouldUseAutoBatteryTheme -> {
-                AppCompatDelegate.setDefaultNightMode(
-                    AppCompatDelegate.MODE_NIGHT_AUTO_BATTERY,
-                )
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_AUTO_BATTERY)
             }
             SDK_INT >= Build.VERSION_CODES.P && settings.shouldFollowDeviceTheme -> {
-                AppCompatDelegate.setDefaultNightMode(
-                    AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
-                )
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
             }
             // First run of app no default set, set the default to Follow System for 28+ and Normal Mode otherwise
             else -> {
                 if (SDK_INT >= Build.VERSION_CODES.P) {
-                    AppCompatDelegate.setDefaultNightMode(
-                        AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
-                    )
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
                     settings.shouldFollowDeviceTheme = true
                 } else {
-                    AppCompatDelegate.setDefaultNightMode(
-                        AppCompatDelegate.MODE_NIGHT_NO,
-                    )
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
                     settings.shouldUseLightTheme = true
                 }
             }
@@ -816,11 +845,12 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         updatedCollections: List<String>,
         browserStore: BrowserStore = components.core.store,
     ) {
-        val searchRelatedCollections = listOf(
-            "search-config-v2",
-            "search-config-overrides-v2",
-            "search-config-icons",
-        )
+        val searchRelatedCollections =
+            listOf(
+                "search-config-v2",
+                "search-config-overrides-v2",
+                "search-config-icons",
+            )
         if (searchRelatedCollections.any { it in updatedCollections }) {
             browserStore.dispatch(SearchConfigurationAvailabilityChanged(true))
         }
@@ -838,16 +868,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             WebExtensionSupport.initialize(
                 components.core.engine,
                 components.core.store,
-                onNewTabOverride = { _, engineSession, url, selected ->
-                    val shouldCreatePrivateSession =
-                        components.core.store.state.selectedTab?.content?.private
-                            ?: components.settings.openLinksInAPrivateTab
-
+                isInPrivateBrowsingMode = { components.appStore.state.mode.isPrivate },
+                onNewTabOverride = { _, engineSession, url, selected, isPrivate ->
                     components.useCases.tabsUseCases.addTab(
                         url = url,
                         selectTab = selected,
                         engineSession = engineSession,
-                        private = shouldCreatePrivateSession,
+                        private = isPrivate,
                     )
                 },
                 onCloseTabOverride = { _, sessionId ->
@@ -883,22 +910,23 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     /**
-     * This function is called right after Glean is initialized. Part of this function depends on
-     * shared preferences to be updated so the correct value is sent with the metrics ping.
+     * This function is called right after Glean is initialized. Part of this function depends on shared preferences to
+     * be updated so the correct value is sent with the metrics ping.
      *
-     * The reason we're using shared preferences to track these values is due to the limitations of
-     * the current metrics ping design. The values set here will be sent in every metrics ping even
-     * if these values have not changed since the last startup.
+     * The reason we're using shared preferences to track these values is due to the limitations of the current metrics
+     * ping design. The values set here will be sent in every metrics ping even if these values have not changed since
+     * the last startup.
      */
     @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
     @VisibleForTesting
     internal suspend fun setStartupMetrics(
         browserStore: BrowserStore,
         settings: Settings,
-        dohSettingsProvider: DohSettingsProvider = DefaultDohSettingsProvider(
-            components.core.engine,
-            settings,
-        ),
+        dohSettingsProvider: DohSettingsProvider =
+            DefaultDohSettingsProvider(
+                components.core.engine,
+                settings,
+            ),
         mozillaProductDetector: MozillaProductDetector = MozillaProductDetector,
     ) {
         setPreferenceMetrics(settings, dohSettingsProvider)
@@ -915,11 +943,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 defaultMozBrowser.set(it)
             }
 
-            mozillaProducts.set(
-                mozillaProductDetector.getInstalledMozillaProducts(
-                    applicationContext,
-                ),
-            )
+            mozillaProducts.set(mozillaProductDetector.getInstalledMozillaProducts(applicationContext))
 
             adjustCampaign.set(settings.adjustCampaignId)
             adjustAdGroup.set(settings.adjustAdGroup)
@@ -973,15 +997,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             tabViewSetting.set(settings.getTabViewPingString())
             closeTabSetting.set(settings.getTabTimeoutPingString())
 
-            val isDefaultTheCurrentWallpaper =
-                Wallpaper.nameIsDefault(settings.currentWallpaperName)
+            val isDefaultTheCurrentWallpaper = Wallpaper.nameIsDefault(settings.currentWallpaperName)
 
             defaultWallpaper.set(isDefaultTheCurrentWallpaper)
 
             val notificationManagerCompat = NotificationManagerCompat.from(applicationContext)
             notificationsAllowed.set(notificationManagerCompat.areNotificationsEnabledSafe())
             marketingNotificationAllowed.set(
-                notificationManagerCompat.isNotificationChannelEnabled(MARKETING_CHANNEL_ID),
+                notificationManagerCompat.isNotificationChannelEnabled(MARKETING_CHANNEL_ID)
             )
 
             ramMoreThanThreshold.set(isDeviceRamAboveThreshold)
@@ -996,20 +1019,21 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             enabled.set(autofillUseCases.isEnabled(applicationContext))
         }
 
-        val summarizeSettings = SummarizationSettings.dataStore(applicationContext)
-        UserAiSummarize.summarizationEnabled.set(summarizeSettings.getFeatureEnabledUserStatus().first() == true)
-        UserAiSummarize.gestureEnabled.set(summarizeSettings.getGestureEnabledUserStatus().first())
-        UserAiSummarize.summarizationConsented.set(summarizeSettings.getHasConsentedToShake().first())
-
         Browser.globalAiControlIsBlocking.set(components.aiControlsFeatureBlock.isBlocked.first())
         components.aiFeatureRegistry.getFeatures().forEach { feature ->
             GenaiAiControls.featuresBlocked[feature.id.value].set(!feature.isEnabled.first())
         }
 
+        // Read the summarize preferences only after the registry above, which is what seeds them on a fresh install.
+        // Reading them any earlier reports the feature as disabled for the whole first session.
+        val summarizeSettings = SummarizationSettings.dataStore(applicationContext)
+        UserAiSummarize.summarizationEnabled.set(summarizeSettings.getFeatureEnabledUserStatus().first() == true)
+        UserAiSummarize.gestureEnabled.set(summarizeSettings.getGestureEnabledUserStatus().first())
+        UserAiSummarize.summarizationConsented.set(summarizeSettings.getHasConsentedToShake().first())
+
         browserStore.waitForSelectedOrDefaultSearchEngine { searchEngine ->
             searchEngine?.let {
-                val sendSearchUrl =
-                    !searchEngine.isCustomEngine() || searchEngine.isKnownSearchDomain()
+                val sendSearchUrl = !searchEngine.isCustomEngine() || searchEngine.isKnownSearchDomain()
                 if (sendSearchUrl) {
                     SearchDefaultEngine.apply {
                         code.set(
@@ -1017,7 +1041,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                                 searchEngine.id
                             } else {
                                 "${searchEngine.id}-${searchEngine.telemetrySuffix}"
-                            },
+                            }
                         )
                         name.set(searchEngine.name)
                         searchUrl.set(searchEngine.buildSearchUrl(""))
@@ -1029,12 +1053,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     }
                 }
 
-                val privateSearchEngine =
-                    browserStore.state.search.selectedOrDefaultPrivateSearchEngine
+                val privateSearchEngine = browserStore.state.search.selectedOrDefaultPrivateSearchEngine
                 privateSearchEngine?.let { privateEngine ->
                     val isSameAsDefault = privateEngine.id == searchEngine.id
-                    val sendPrivateSearchUrl =
-                        !privateEngine.isCustomEngine() || privateEngine.isKnownSearchDomain()
+                    val sendPrivateSearchUrl = !privateEngine.isCustomEngine() || privateEngine.isKnownSearchDomain()
                     if (sendPrivateSearchUrl) {
                         SearchDefaultEngineForPrivate.apply {
                             code.set(
@@ -1042,7 +1064,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                                     privateEngine.id
                                 } else {
                                     "${privateEngine.id}-${privateEngine.telemetrySuffix}"
-                                },
+                                }
                             )
                             name.set(if (isSameAsDefault) "default" else privateEngine.name)
                             searchUrl.set(privateEngine.buildSearchUrl(""))
@@ -1097,15 +1119,21 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             bookmarksSuggestion.set(settings.shouldShowBookmarkSuggestions)
             clipboardSuggestionsEnabled.set(settings.shouldShowClipboardSuggestions)
             voiceSearchEnabled.set(settings.shouldShowVoiceSearch)
+            googleLensEnabled.set(settings.googleLensIntegrationEnabled && settings.googleLensIntegrationUserEnabled)
             openLinksInAppEnabled.set(settings.openLinksInExternalApp)
             signedInSync.set(settings.signedInFxaAccount)
             isolatedContentProcessesEnabled.set(settings.isIsolatedProcessEnabled)
             appZygoteIsolatedContentProcessesEnabled.set(settings.isAppZygoteEnabled)
             TabStrip.enabled.set(settings.isTabStripEnabled)
 
-            val syncedItems = SyncEnginesStorage(applicationContext).getStatus().entries.filter {
-                it.value
-            }.map { it.key.nativeName }
+            val syncedItems =
+                SyncEnginesStorage(applicationContext)
+                    .getStatus()
+                    .entries
+                    .filter {
+                        it.value
+                    }
+                    .map { it.key.nativeName }
             syncItems.set(syncedItems)
 
             toolbarPositionSetting.set(
@@ -1113,18 +1141,19 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     settings.shouldUseFixedTopToolbar -> "fixed_top"
                     settings.shouldUseBottomToolbar -> "bottom"
                     else -> "top"
-                },
+                }
             )
 
             toolbarModeSetting.set(
                 when {
                     settings.shouldUseExpandedToolbar -> "expanded"
                     else -> "simple"
-                },
+                }
             )
 
             toolbarSimpleShortcut.set(settings.toolbarSimpleShortcutKey)
             toolbarExpandedShortcut.set(settings.toolbarExpandedShortcutKey)
+            toolbarTabStripShortcut.set(settings.toolbarTabStripShortcutKey)
 
             enhancedTrackingProtection.set(
                 when {
@@ -1133,7 +1162,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     settings.useStrictTrackingProtection -> "strict"
                     settings.useCustomTrackingProtection -> "custom"
                     else -> ""
-                },
+                }
             )
             etpCustomCookiesSelection.set(settings.blockCookiesSelectionInCustomTrackingProtection)
 
@@ -1153,10 +1182,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 when {
                     settings.shouldUseLightTheme -> "light"
                     settings.shouldUseDarkTheme -> "dark"
+                    settings.shouldUseOledTheme -> "oled"
                     settings.shouldFollowDeviceTheme -> "system"
                     settings.shouldUseAutoBatteryTheme -> "battery"
                     else -> ""
-                },
+                }
             )
 
             inactiveTabsEnabled.set(settings.inactiveTabsAreEnabled)
@@ -1168,8 +1198,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private fun setAutofillMetrics() {
-        @OptIn(DelicateCoroutinesApi::class)
-        GlobalScope.launch(IO) {
+        applicationScope.launch(IO) {
             try {
                 val autoFillStorage = applicationContext.components.core.autofillStorage
                 Addresses.savedAll.set(autoFillStorage.countAllAddresses())
@@ -1200,7 +1229,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 settings.alwaysOpenTheLastTabWhenOpeningTheApp -> "last tab"
                 settings.openHomepageAfterFourHoursOfInactivity -> "homepage after four hours"
                 else -> ""
-            },
+            }
         )
     }
 
@@ -1241,11 +1270,28 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     override val workManagerConfiguration
-        get() = Builder().setMinimumLoggingLevel(INFO).build()
+        get() =
+            Builder()
+                .setMinimumLoggingLevel(INFO)
+                .setWorkerFactory(
+                    DelegatingWorkerFactory().apply {
+                        addFactory(
+                            PrivacyReportWorkerFactory(
+                                settings = components.settings,
+                                trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
+                                notificationsDelegate = components.notificationsDelegate,
+                            )
+                        )
+                    }
+                )
+                .build()
 
-    @OptIn(DelicateCoroutinesApi::class)
+    /**
+     * Triggers the initialization of wallpapers by downloading any necessary assets. This is typically called during
+     * the application startup sequence once visual completeness is reached.
+     */
     open fun downloadWallpapers() {
-        GlobalScope.launch {
+        applicationScope.launch {
             components.useCases.wallpaperUseCases.initialize()
         }
     }
@@ -1262,12 +1308,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     /**
      * Initializes EmojiCompat manually on a background thread.
      *
-     * By initializing manually, we avoid the startup penalty associated with the default
-     * EmojiCompat initializer's ContentProvider. [DefaultEmojiCompatConfig] is used to
-     * automatically find a compatible font provider (such as Google Play Services).
+     * By initializing manually, we avoid the startup penalty associated with the default EmojiCompat initializer's
+     * ContentProvider. [DefaultEmojiCompatConfig] is used to automatically find a compatible font provider (such as
+     * Google Play Services).
      *
-     * @param dispatcher The [CoroutineDispatcher] on which the initialization will occur.
-     * Defaults to [ioDispatcher].
+     * @param dispatcher The [CoroutineDispatcher] on which the initialization will occur. Defaults to [ioDispatcher].
      */
     private suspend fun initializeEmojiCompat(dispatcher: CoroutineDispatcher = ioDispatcher) {
         withContext(dispatcher) {
@@ -1292,10 +1337,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                             message = "EmojiCompat initialization failed",
                         )
                     }
-                },
+                }
             )
 
             EmojiCompat.init(config)
         }
     }
 }
+
+/** Returns the cutoff timestamp (in milliseconds) before which history metadata should be cleaned up. */
+internal fun historyMetadataCleanupCutoff(now: Long = System.currentTimeMillis()): Long =
+    now - Core.HISTORY_METADATA_MAX_AGE_IN_MS

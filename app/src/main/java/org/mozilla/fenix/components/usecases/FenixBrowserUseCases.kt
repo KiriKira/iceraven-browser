@@ -44,8 +44,7 @@ class FenixBrowserUseCases(
      * @param forceSearch Whether or not to force performing a search.
      * @param searchEngine Optional [SearchEngine] to use when performing a search.
      * @param flags Flags that will be used when loading the URL (not applied to searches).
-     * @param historyMetadata The [HistoryMetadataKey] of the new tab in case this tab
-     * was opened from history.
+     * @param historyMetadata The [HistoryMetadataKey] of the new tab in case this tab was opened from history.
      * @param additionalHeaders The extra headers to use when loading the URL.
      */
     @Suppress("CognitiveComplexMethod")
@@ -82,11 +81,12 @@ class FenixBrowserUseCases(
             }
         } else {
             if (newTab) {
-                val searchUseCase = if (private) {
-                    searchUseCases.newPrivateTabSearch
-                } else {
-                    searchUseCases.newTabSearch
-                }
+                val searchUseCase =
+                    if (private) {
+                        searchUseCases.newPrivateTabSearch
+                    } else {
+                        searchUseCases.newTabSearch
+                    }
                 searchUseCase.invoke(
                     searchTerms = searchTermOrURL,
                     source = SessionState.Source.Internal.UserEntered,
@@ -121,34 +121,25 @@ class FenixBrowserUseCases(
      * Adds a new homepage ("about:home") tab.
      *
      * @param private Whether or not the new homepage tab should be private.
+     * @param startLoading Whether the new tab should start loading immediately.
+     * @param selectTab Whether the new tab should become the selected tab.
      * @return The ID of the created tab.
      */
-    fun addNewHomepageTab(private: Boolean = appStore.state.mode.isPrivate): String {
+    fun addNewHomepageTab(
+        private: Boolean = appStore.state.mode.isPrivate,
+        startLoading: Boolean = true,
+        selectTab: Boolean = true,
+    ): String {
         return tabsUseCases.addTab.invoke(
             url = ABOUT_HOME_URL,
             title = homepageTitle,
+            selectTab = selectTab,
+            startLoading = startLoading,
             private = private,
         )
     }
 
-    /**
-     * Adds a new homepage ("about:home") tab to the provided tab group.
-     *
-     * @param group The ID of the group.
-     */
-    fun addNewHomepageTabInGroup(
-        group: String,
-    ) {
-        val tabId = addNewHomepageTab()
-        tabsUseCases.addTabsInGroup(
-            group = group,
-            tabId = tabId,
-        )
-    }
-
-    /**
-     * Loads the homepage ("about:home").
-     */
+    /** Loads the homepage ("about:home"). */
     fun navigateToHomepage() {
         loadUrlUseCase.invoke(url = ABOUT_HOME_URL)
     }

@@ -6,22 +6,25 @@ package org.mozilla.fenix
 
 import android.content.Context
 import android.net.ConnectivityManager
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.getSystemService
+import androidx.core.net.toUri
 import androidx.navigation.NavController
+import java.lang.ref.WeakReference
 import mozilla.components.browser.errorpages.ErrorPages
-import mozilla.components.browser.errorpages.ErrorType
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.request.ErrorType
 import mozilla.components.concept.engine.request.RequestInterceptor
+import mozilla.components.feature.search.ext.buildSearchUrl
 import org.mozilla.fenix.GleanMetrics.ErrorPage
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isOnline
 import org.mozilla.fenix.helpers.TestHelper.appContext
-import java.lang.ref.WeakReference
 
 /**
- * This class overrides the application's request interceptor to
- * deactivate the FxA web channel
- * which is not supported on the staging servers.
+ * This class overrides the application's request interceptor to deactivate the FxA web channel which is not supported
+ * on the staging servers.
  */
 class AppRequestInterceptor(
     private val context: Context,
@@ -44,20 +47,11 @@ class AppRequestInterceptor(
         isDirectNavigation: Boolean,
         isSubframeRequest: Boolean,
     ): RequestInterceptor.InterceptionResponse? {
-        interceptFxaRequest(
-            engineSession,
-            uri,
-            lastUri,
-            hasUserGesture,
-            isSameDomain,
-            isRedirect,
-            isDirectNavigation,
-            isSubframeRequest,
-        )?.let { response ->
-            return response
+        interceptErrorPageAction(uri)?.let {
+            return it
         }
-        return context.components.services.appLinksInterceptor
-            .onLoadRequest(
+
+        interceptFxaRequest(
                 engineSession,
                 uri,
                 lastUri,
@@ -67,6 +61,19 @@ class AppRequestInterceptor(
                 isDirectNavigation,
                 isSubframeRequest,
             )
+            ?.let { response ->
+                return response
+            }
+        return context.components.services.appLinksInterceptor.onLoadRequest(
+            engineSession,
+            uri,
+            lastUri,
+            hasUserGesture,
+            isSameDomain,
+            isRedirect,
+            isDirectNavigation,
+            isSubframeRequest,
+        )
     }
 
     override fun onErrorRequest(
@@ -80,22 +87,25 @@ class AppRequestInterceptor(
         ErrorPage.visitedError.record(ErrorPage.VisitedErrorExtra(improvedErrorType.name))
 
         val isPrivate = isPrivateForSession(session)
+        val archiveActionEnabled = context.components.settings.isWaybackMachineEnabled
 
-        val errorPageUri = ErrorPages.createUrlEncodedErrorPage(
-            context = context,
-            errorType = improvedErrorType,
-            uri = uri,
-            htmlResource = riskLevel.htmlRes,
-            titleOverride = { type -> getErrorPageTitle(context, type) },
-            descriptionOverride = { type -> getErrorPageDescription(context, type) },
-            isPrivate = isPrivate,
-        )
+        val errorPageUri =
+            ErrorPages.createUrlEncodedErrorPage(
+                context = context,
+                errorType = improvedErrorType,
+                uri = uri,
+                htmlResource = riskLevel.htmlRes,
+                errorStringsProvider = FenixErrorStringsProvider(),
+                isPrivate = isPrivate,
+                archiveActionEnabled = archiveActionEnabled,
+            )
 
         return RequestInterceptor.ErrorResponse(errorPageUri)
     }
 
     // This method is the only difference from the production code.
     // Otherwise the code should be kept identical
+    @Suppress("LongParameterList") // Mirrors the production RequestInterceptor.onLoadRequest signature.
     private fun interceptFxaRequest(
         engineSession: EngineSession,
         uri: String,
@@ -119,9 +129,48 @@ class AppRequestInterceptor(
     }
 
     /**
-     * Where possible, this will make the error type more accurate by including information not
-     * available to AC.
+     * Intercepts navigations the error page makes to the [ERROR_PAGE_ACTION_SCHEME] sentinel scheme to hand archive
+     * actions back to native code: searching the web for the failed page with the user's default search engine, or
+     * opening a located archived copy. Returns `null` for any other [uri] so normal navigation proceeds.
      */
+    private fun interceptErrorPageAction(uri: String): RequestInterceptor.InterceptionResponse? {
+        if (!uri.startsWith("$ERROR_PAGE_ACTION_SCHEME://")) {
+            return null
+        }
+
+        val parsed = uri.toUri()
+        return when (parsed.host) {
+            ERROR_PAGE_ACTION_ATTEMPT -> {
+                ErrorPage.archiveButtonClicked.record()
+                RequestInterceptor.InterceptionResponse.Deny
+            }
+
+            ERROR_PAGE_ACTION_SEARCH -> {
+                val query = parsed.getQueryParameter("q").orEmpty()
+                val searchEngine = context.components.core.store.state.search.selectedOrDefaultSearchEngine
+                if (query.isEmpty() || searchEngine == null) {
+                    RequestInterceptor.InterceptionResponse.Deny
+                } else {
+                    ErrorPage.archiveSearchWebSelected.record()
+                    RequestInterceptor.InterceptionResponse.Url(searchEngine.buildSearchUrl(query))
+                }
+            }
+
+            ERROR_PAGE_ACTION_OPEN -> {
+                val archiveUrl = parsed.getQueryParameter("url").orEmpty()
+                if (archiveUrl.isEmpty()) {
+                    RequestInterceptor.InterceptionResponse.Deny
+                } else {
+                    ErrorPage.archivedVersionOpened.record()
+                    RequestInterceptor.InterceptionResponse.Url(archiveUrl)
+                }
+            }
+
+            else -> RequestInterceptor.InterceptionResponse.Deny
+        }
+    }
+
+    /** Where possible, this will make the error type more accurate by including information not available to AC. */
     private fun improveErrorType(errorType: ErrorType): ErrorType {
         // This is not an ideal solution. For context, see:
         // https://github.com/mozilla-mobile/android-components/pull/5068#issuecomment-558415367
@@ -135,62 +184,42 @@ class AppRequestInterceptor(
         }
     }
 
-    private fun getRiskLevel(errorType: ErrorType): RiskLevel = when (errorType) {
-        ErrorType.UNKNOWN,
-        ErrorType.ERROR_NET_INTERRUPT,
-        ErrorType.ERROR_NET_TIMEOUT,
-        ErrorType.ERROR_CONNECTION_REFUSED,
-        ErrorType.ERROR_UNKNOWN_SOCKET_TYPE,
-        ErrorType.ERROR_REDIRECT_LOOP,
-        ErrorType.ERROR_OFFLINE,
-        ErrorType.ERROR_NET_RESET,
-        ErrorType.ERROR_UNSAFE_CONTENT_TYPE,
-        ErrorType.ERROR_CORRUPTED_CONTENT,
-        ErrorType.ERROR_CONTENT_CRASHED,
-        ErrorType.ERROR_INVALID_CONTENT_ENCODING,
-        ErrorType.ERROR_UNKNOWN_HOST,
-        ErrorType.ERROR_MALFORMED_URI,
-        ErrorType.ERROR_FILE_NOT_FOUND,
-        ErrorType.ERROR_FILE_ACCESS_DENIED,
-        ErrorType.ERROR_PROXY_CONNECTION_REFUSED,
-        ErrorType.ERROR_UNKNOWN_PROXY_HOST,
-        ErrorType.ERROR_NO_INTERNET,
-        ErrorType.ERROR_HTTPS_ONLY,
-        ErrorType.ERROR_BAD_HSTS_CERT,
-        ErrorType.ERROR_UNKNOWN_PROTOCOL,
-        -> RiskLevel.Low
+    private fun getRiskLevel(errorType: ErrorType): RiskLevel =
+        when (errorType) {
+            ErrorType.UNKNOWN,
+            ErrorType.ERROR_NET_INTERRUPT,
+            ErrorType.ERROR_NET_TIMEOUT,
+            ErrorType.ERROR_CONNECTION_REFUSED,
+            ErrorType.ERROR_LOCAL_NETWORK_ACCESS_DENIED,
+            ErrorType.ERROR_UNKNOWN_SOCKET_TYPE,
+            ErrorType.ERROR_REDIRECT_LOOP,
+            ErrorType.ERROR_OFFLINE,
+            ErrorType.ERROR_NET_RESET,
+            ErrorType.ERROR_UNSAFE_CONTENT_TYPE,
+            ErrorType.ERROR_CORRUPTED_CONTENT,
+            ErrorType.ERROR_CONTENT_CRASHED,
+            ErrorType.ERROR_INVALID_CONTENT_ENCODING,
+            ErrorType.ERROR_UNKNOWN_HOST,
+            ErrorType.ERROR_MALFORMED_URI,
+            ErrorType.ERROR_FILE_NOT_FOUND,
+            ErrorType.ERROR_FILE_ACCESS_DENIED,
+            ErrorType.ERROR_PROXY_CONNECTION_REFUSED,
+            ErrorType.ERROR_UNKNOWN_PROXY_HOST,
+            ErrorType.ERROR_NO_INTERNET,
+            ErrorType.ERROR_HTTPS_ONLY,
+            ErrorType.ERROR_BAD_HSTS_CERT,
+            ErrorType.ERROR_UNKNOWN_PROTOCOL -> RiskLevel.Low
 
-        ErrorType.ERROR_SECURITY_BAD_CERT,
-        ErrorType.ERROR_SECURITY_SSL,
-        ErrorType.ERROR_PORT_BLOCKED,
-        -> RiskLevel.Medium
+            ErrorType.ERROR_SECURITY_BAD_CERT,
+            ErrorType.ERROR_SECURITY_SSL,
+            ErrorType.ERROR_PORT_BLOCKED -> RiskLevel.Medium
 
-        ErrorType.ERROR_SAFEBROWSING_HARMFUL_URI,
-        ErrorType.ERROR_SAFEBROWSING_MALWARE_URI,
-        ErrorType.ERROR_SAFEBROWSING_PHISHING_URI,
-        ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI,
-        ErrorType.ERROR_HARMFULADDON_URI,
-        -> RiskLevel.High
-    }
-
-    private fun getErrorPageTitle(context: Context, type: ErrorType): String? {
-        return when (type) {
-            ErrorType.ERROR_HTTPS_ONLY -> context.getString(R.string.errorpage_httpsonly_title)
-            // Returning `null` will let the component use its default title for this error type
-            else -> null
+            ErrorType.ERROR_SAFEBROWSING_HARMFUL_URI,
+            ErrorType.ERROR_SAFEBROWSING_MALWARE_URI,
+            ErrorType.ERROR_SAFEBROWSING_PHISHING_URI,
+            ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI,
+            ErrorType.ERROR_HARMFULADDON_URI -> RiskLevel.High
         }
-    }
-
-    private fun getErrorPageDescription(context: Context, type: ErrorType): String? {
-        return when (type) {
-            ErrorType.ERROR_HTTPS_ONLY ->
-                context.getString(R.string.errorpage_httpsonly_message_title) +
-                    "<br><br>" +
-                    context.getString(R.string.errorpage_httpsonly_message_summary)
-            // Returning `null` will let the component use its default description for this error type
-            else -> null
-        }
-    }
 
     internal enum class RiskLevel(val htmlRes: String) {
         Low(LOW_AND_MEDIUM_RISK_ERROR_PAGES),
@@ -201,5 +230,10 @@ class AppRequestInterceptor(
     companion object {
         internal const val LOW_AND_MEDIUM_RISK_ERROR_PAGES = "low_and_medium_risk_error_pages.html"
         internal const val HIGH_RISK_ERROR_PAGES = "high_risk_error_pages.html"
+
+        @VisibleForTesting internal const val ERROR_PAGE_ACTION_SCHEME = "firefox-error-action"
+        private const val ERROR_PAGE_ACTION_ATTEMPT = "attempt"
+        private const val ERROR_PAGE_ACTION_SEARCH = "search"
+        private const val ERROR_PAGE_ACTION_OPEN = "open"
     }
 }

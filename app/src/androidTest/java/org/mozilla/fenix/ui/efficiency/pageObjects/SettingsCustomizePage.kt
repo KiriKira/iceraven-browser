@@ -5,45 +5,40 @@
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.hasSibling
-import androidx.test.espresso.matcher.ViewMatchers.isChecked
-import androidx.test.espresso.matcher.ViewMatchers.withId
-import androidx.test.espresso.matcher.ViewMatchers.withText
-import org.hamcrest.Matchers.allOf
-import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
-import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationGraph
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationOptions
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsCustomizeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsSelectors
 
-class SettingsCustomizePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) : BasePage(composeRule) {
+class SettingsCustomizePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) :
+    BasePage(composeRule) {
     override val pageName = "SettingsCustomizePage"
 
-    init {
-        NavigationRegistry.register(
+    internal override fun registerNavigation(builder: NavigationGraph.Builder) {
+        builder.register(
             from = pageName,
             to = "SettingsPage",
             steps = listOf(NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON)),
         )
     }
 
-    override fun navigateToPage(url: String, forceNavigation: Boolean): SettingsCustomizePage {
-        super.navigateToPage(url, forceNavigation)
+    override fun navigateToPage(
+        url: String,
+        forceNavigation: Boolean,
+        navigationOptions: NavigationOptions,
+    ): SettingsCustomizePage {
+        super.navigateToPage(url, forceNavigation, navigationOptions)
         return this
     }
 
     fun verifyOptionIsSelected(selector: Selector): SettingsCustomizePage {
-        onView(withText(selector.value))
-            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        mozVerifyElementHasCheckedSiblingByResName(selector, "radio_button")
         return this
     }
 
-    override fun mozGetSelectorsByGroup(group: String): List<Selector> {
-        return SettingsCustomizeSelectors.all.filter { it.groups.contains(group) }
-    }
+    override val selectorCatalog = SettingsCustomizeSelectors
 }

@@ -44,13 +44,17 @@ class IPProtectionMenuBinding(
                 onIPProtectionStatusUpdate(it)
             }
     }
+}
 
-    private fun IPProtectionState.toMenuState() = IPProtectionMenuState(
+/** Maps this [IPProtectionState] to the [IPProtectionMenuState] used to configure the menu item. */
+internal fun IPProtectionState.toMenuState() =
+    IPProtectionMenuState(
         status = this.toMenuStatus(),
         dataLimitGb = if (maxDataBytes > 0) maxDataGb.toInt() else -1,
     )
 
-    private fun IPProtectionState.toMenuStatus() = when {
+private fun IPProtectionState.toMenuStatus() =
+    when {
         serviceStatus == ServiceState.Unauthenticated -> IPProtectionMenuStatus.AuthRequired
         proxyStatus is Uninitialized || proxyStatus is Authorized.Idle -> IPProtectionMenuStatus.Disabled
         proxyStatus is Authorized.Activating -> IPProtectionMenuStatus.Activating
@@ -61,4 +65,3 @@ class IPProtectionMenuBinding(
             accountState.status == AccountStatus.NeedsAuthorization -> IPProtectionMenuStatus.AuthRequired
         else -> IPProtectionMenuStatus.Disabled
     }
-}

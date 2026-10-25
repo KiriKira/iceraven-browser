@@ -45,6 +45,7 @@ abstract class NimbusFmlCommandTask : DefaultTask() {
     // the task to fail if the `fmlBinary` file doesn't exist
     // (https://github.com/gradle/gradle/issues/2016).
     @get:InputFiles
+    @get:Optional
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val fmlBinary: RegularFileProperty
 
@@ -60,30 +61,30 @@ abstract class NimbusFmlCommandTask : DefaultTask() {
 
     @TaskAction
     fun execute() {
-        execOperations.exec { spec ->
-            spec.apply {
-                val projDir = projectLayout.projectDirectory
-                val localAppServices = applicationServicesDir.orNull
-                if (localAppServices == null) {
-                    if (!fmlBinary.get().asFile.exists()) {
-                        throw GradleException(
-                            "`nimbus-fml` binary not found at ${fmlBinary.get().asFile} and " +
-                            "`nimbus.applicationServicesDir` is not set. Either build the project " +
-                            "with `./mach build` or set `autoPublish.application-services.dir` in local.properties."
-                        )
-                    }
-                    workingDir(projDir)
-                    commandLine(fmlBinary.get().asFile)
-                } else {
-                    val cargoManifest = projDir.file("$localAppServices/$APPSERVICES_FML_HOME/Cargo.toml").asFile
-
-                    commandLine("cargo")
-                    args("run")
-                    args("--manifest-path", cargoManifest)
-                    args("--")
+        execOperations.exec {
+            val projDir = projectLayout.projectDirectory
+            val localAppServices = applicationServicesDir.orNull
+            if (localAppServices == null) {
+                val fmlBinaryFile = fmlBinary.orNull?.asFile
+                if (fmlBinaryFile == null || !fmlBinaryFile.exists()) {
+                    throw GradleException(
+                        "`nimbus-fml` binary not found" +
+                        (if (fmlBinaryFile != null) " at $fmlBinaryFile" else "") +
+                        " and `nimbus.applicationServicesDir` is not set. Either build the project " +
+                        "with `./mach build` or set `autoPublish.application-services.dir` in local.properties."
+                    )
                 }
+                workingDir(projDir)
+                commandLine(fmlBinaryFile)
+            } else {
+                val cargoManifest = projDir.file("$localAppServices/$APPSERVICES_FML_HOME/Cargo.toml").asFile
+
+                commandLine("cargo")
+                args("run")
+                args("--manifest-path", cargoManifest)
+                args("--")
             }
-            configureFmlCommand(spec)
+            configureFmlCommand(this)
         }
     }
 

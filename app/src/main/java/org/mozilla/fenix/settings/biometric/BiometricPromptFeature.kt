@@ -14,8 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.log.logger.Logger
+import org.mozilla.fenix.settings.biometric.ext.isBiometricHardwareAvailable
 import org.mozilla.fenix.settings.biometric.ext.isEnrolled
-import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
 
 /**
  * A [LifecycleAwareFeature] for the Android Biometric API to prompt for user authentication.
@@ -33,8 +33,7 @@ class BiometricPromptFeature(
 ) : LifecycleAwareFeature {
     private val logger = Logger(javaClass.simpleName)
 
-    @VisibleForTesting
-    internal var biometricPrompt: BiometricPrompt? = null
+    @VisibleForTesting internal var biometricPrompt: BiometricPrompt? = null
 
     override fun start() {
         ensureBiometricPromptInitialized()
@@ -50,10 +49,11 @@ class BiometricPromptFeature(
      * @param title Adds a title for the authentication prompt.
      */
     fun requestAuthentication(title: String) {
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
-            .setTitle(title)
-            .build()
+        val promptInfo =
+            BiometricPrompt.PromptInfo.Builder()
+                .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
+                .setTitle(title)
+                .build()
 
         ensureBiometricPromptInitialized()
 
@@ -87,10 +87,8 @@ class BiometricPromptFeature(
 
     companion object {
 
-        /**
-         * Checks if the appropriate SDK version and hardware capabilities are met to use the feature.
-         */
+        /** Checks if the appropriate SDK version and hardware capabilities are met to use the feature. */
         fun canUseFeature(manager: BiometricManager): Boolean =
-            manager.isHardwareAvailable() && manager.isEnrolled()
+            manager.isBiometricHardwareAvailable() && manager.isEnrolled()
     }
 }

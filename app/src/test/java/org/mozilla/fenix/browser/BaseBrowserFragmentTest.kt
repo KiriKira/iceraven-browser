@@ -19,6 +19,7 @@ import io.mockk.spyk
 import io.mockk.verify
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
+import kotlin.test.assertNotNull
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.content.DownloadState
@@ -39,7 +40,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.utils.Settings
-import kotlin.test.assertNotNull
 
 class BaseBrowserFragmentTest {
     private lateinit var fragment: TestBaseBrowserFragment
@@ -54,9 +54,10 @@ class BaseBrowserFragmentTest {
         fragment = spyk(TestBaseBrowserFragment())
         swipeRefreshLayout = mockk(relaxed = true)
         engineView = mockk(relaxed = true)
-        settings = mockk(relaxed = true) {
-            every { isTabStripEnabled } returns false
-        }
+        settings =
+            mockk(relaxed = true) {
+                every { isTabStripEnabled } returns false
+            }
         testContext = mockk(relaxed = true)
         container = mockk(relaxed = true)
 
@@ -186,18 +187,20 @@ class BaseBrowserFragmentTest {
     fun `WHEN status is equals to FAILED or COMPLETED and it is the same tab then shouldShowCompletedDownloadDialog will be true`() {
         every { fragment.getCurrentTab() } returns createTab(id = "1", url = "")
 
-        val download = DownloadState(
-            url = "",
-            sessionId = "1",
-            directoryPath = "/",
-        )
+        val download =
+            DownloadState(
+                url = "",
+                sessionId = "1",
+                directoryPath = "/",
+            )
 
-        val status = DownloadState.Status.entries
-            .filter { it == DownloadState.Status.COMPLETED && it == DownloadState.Status.FAILED }
+        val status =
+            DownloadState.Status.entries.filter {
+                it == DownloadState.Status.COMPLETED && it == DownloadState.Status.FAILED
+            }
 
         status.forEach {
-            val result =
-                fragment.shouldShowCompletedDownloadDialog(download, it)
+            val result = fragment.shouldShowCompletedDownloadDialog(download, it)
 
             assertTrue(result)
         }
@@ -207,18 +210,20 @@ class BaseBrowserFragmentTest {
     fun `WHEN status is different from FAILED or COMPLETED then shouldShowCompletedDownloadDialog will be false`() {
         every { fragment.getCurrentTab() } returns createTab(id = "1", url = "")
 
-        val download = DownloadState(
-            url = "",
-            sessionId = "1",
-            directoryPath = "/",
-        )
+        val download =
+            DownloadState(
+                url = "",
+                sessionId = "1",
+                directoryPath = "/",
+            )
 
-        val status = DownloadState.Status.entries
-            .filter { it != DownloadState.Status.COMPLETED && it != DownloadState.Status.FAILED }
+        val status =
+            DownloadState.Status.entries.filter {
+                it != DownloadState.Status.COMPLETED && it != DownloadState.Status.FAILED
+            }
 
         status.forEach {
-            val result =
-                fragment.shouldShowCompletedDownloadDialog(download, it)
+            val result = fragment.shouldShowCompletedDownloadDialog(download, it)
 
             assertFalse(result)
         }
@@ -228,18 +233,20 @@ class BaseBrowserFragmentTest {
     fun `WHEN the tab is different from the initial one then shouldShowCompletedDownloadDialog will be false`() {
         every { fragment.getCurrentTab() } returns createTab(id = "1", url = "")
 
-        val download = DownloadState(
-            url = "",
-            sessionId = "2",
-            directoryPath = "/",
-        )
+        val download =
+            DownloadState(
+                url = "",
+                sessionId = "2",
+                directoryPath = "/",
+            )
 
-        val status = DownloadState.Status.entries
-            .filter { it != DownloadState.Status.COMPLETED && it != DownloadState.Status.FAILED }
+        val status =
+            DownloadState.Status.entries.filter {
+                it != DownloadState.Status.COMPLETED && it != DownloadState.Status.FAILED
+            }
 
         status.forEach {
-            val result =
-                fragment.shouldShowCompletedDownloadDialog(download, it)
+            val result = fragment.shouldShowCompletedDownloadDialog(download, it)
 
             assertFalse(result)
         }
@@ -294,64 +301,78 @@ class BaseBrowserFragmentTest {
     }
 
     @Test
-    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are true GIVEN a call to setupMicrosurvey THEN messagingFeature is initialized`() {
+    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are true GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is initialized and observer is added`() {
         every { testContext.components.settings.isExperimentationEnabled } returns true
         every { testContext.components.settings.microsurveyFeatureEnabled } returns true
+        val lifecycle = fragment.viewLifecycleOwner.lifecycle
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
         fragment.initializeMicrosurveyFeature(testContext)
 
-        assertNotNull(fragment.messagingFeatureMicrosurvey.get())
+        val feature = fragment.messagingFeatureMicrosurvey.get()
+        assertNotNull(feature)
+        verify(exactly = 1) { lifecycle.addObserver(feature) }
     }
 
     @Test
-    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are false GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is not initialized and observer is not added`() {
         every { testContext.components.settings.isExperimentationEnabled } returns false
         every { testContext.components.settings.microsurveyFeatureEnabled } returns false
+        val lifecycle = fragment.viewLifecycleOwner.lifecycle
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
         fragment.initializeMicrosurveyFeature(testContext)
 
-        assertNull(fragment.messagingFeatureMicrosurvey.get())
+        val feature = fragment.messagingFeatureMicrosurvey.get()
+        assertNull(feature)
+        verify(exactly = 0) { lifecycle.addObserver(any()) }
     }
 
     @Test
-    fun `WHEN isMicrosurveyEnabled is true and isExperimentationEnabled false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+    fun `WHEN isMicrosurveyEnabled is true and isExperimentationEnabled false GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is not initialized and observer is not added`() {
         every { testContext.components.settings.isExperimentationEnabled } returns false
         every { testContext.components.settings.microsurveyFeatureEnabled } returns true
+        val lifecycle = fragment.viewLifecycleOwner.lifecycle
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
         fragment.initializeMicrosurveyFeature(testContext)
 
-        assertNull(fragment.messagingFeatureMicrosurvey.get())
+        val feature = fragment.messagingFeatureMicrosurvey.get()
+        assertNull(feature)
+        verify(exactly = 0) { lifecycle.addObserver(any()) }
     }
 
     @Test
-    fun `WHEN isMicrosurveyEnabled is false and isExperimentationEnabled true GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+    fun `WHEN isMicrosurveyEnabled is false and isExperimentationEnabled true GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is not initialized and observer is not added`() {
         every { testContext.components.settings.isExperimentationEnabled } returns true
         every { testContext.components.settings.microsurveyFeatureEnabled } returns false
+        val lifecycle = fragment.viewLifecycleOwner.lifecycle
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
         fragment.initializeMicrosurveyFeature(testContext)
 
-        assertNull(fragment.messagingFeatureMicrosurvey.get())
+        val feature = fragment.messagingFeatureMicrosurvey.get()
+        assertNull(feature)
+        verify(exactly = 0) { lifecycle.addObserver(any()) }
     }
 
     @Test
     fun `GIVEN fixed toolbar WHEN setting engine view insets THEN use bottom toolbar's height as bottom margin`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
         every { settings.isDynamicToolbarEnabled } returns false
 
@@ -363,14 +384,16 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN only a top toolbar WHEN setting engine view insets THEN use top toolbar's height`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -383,17 +406,19 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN default engine view resize behavior and only a top toolbar WHEN setting engine view insets THEN don't update current values`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
         } returns true
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -406,19 +431,17 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN a pdf shown with a dynamic top toolbar WHEN setting engine view insets THEN set none`() {
         var currentTab = createTab("https://example.com")
-        currentTab = currentTab.copy(
-            content = currentTab.content.copy(
-                isPdf = true,
-            ),
-        )
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        currentTab = currentTab.copy(content = currentTab.content.copy(isPdf = true))
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -431,10 +454,11 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN find in page active with a dynamic top toolbar WHEN setting engine view insets THEN set none`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
         val findInPageIntegration: FindInPageIntegration = mockk {
             every { isFeatureActive } returns true
         }
@@ -443,10 +467,11 @@ class BaseBrowserFragmentTest {
             owner = mockk(relaxed = true),
             view = mockk(relaxed = true),
         )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -459,14 +484,16 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN only a bottom toolbar WHEN setting engine view insets THEN use bottom toolbar's height`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 22
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 22
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -479,17 +506,19 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN default engine view resize behavior and only a bottom toolbar WHEN setting engine view insets THEN don't update current values`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
         } returns true
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -502,14 +531,16 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN addressbar and micro survey shown WHEN setting engine view insets THEN use both toolbars' heights`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.shouldShowMicrosurveyPrompt } returns true
         every { settings.isDynamicToolbarEnabled } returns true
@@ -524,17 +555,19 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN default engine view resize behavior and addressbar and navbar shown WHEN setting engine view insets THEN use don't update current values`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
         } returns true
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -548,18 +581,21 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN keyboard shown WHEN setting engine view insets THEN use both toolbars' heights`() {
         val currentTab = createTab("https://example.com")
-        val configuration = Configuration().apply {
-            screenHeightDp = 700
-            screenWidthDp = 400
-        }
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        val configuration =
+            Configuration().apply {
+                screenHeightDp = 700
+                screenWidthDp = 400
+            }
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -575,17 +611,19 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN default engine view resize behavior and keyboard shown WHEN setting engine view insets THEN don't update current values`() {
         val currentTab = createTab("https://example.com")
-        every { testContext.components.core.store.state } returns BrowserState(
-            tabs = listOf(currentTab),
-            selectedTabId = currentTab.id,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(
+                tabs = listOf(currentTab),
+                selectedTabId = currentTab.id,
+            )
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
         } returns true
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseFixedTopToolbar } returns false
@@ -665,14 +703,16 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN normal browsing WHEN reinitializing the engine view THEN use the toolbar heights`() {
         fragment.webAppToolbarShouldBeVisible = true
-        val configuration = Configuration().apply {
-            screenHeightDp = 700
-            screenWidthDp = 400
-        }
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        val configuration =
+            Configuration().apply {
+                screenHeightDp = 700
+                screenWidthDp = 400
+            }
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseExpandedToolbar } returns true
@@ -687,14 +727,16 @@ class BaseBrowserFragmentTest {
     @Test
     fun `GIVEN a PWA WHEN reinitializing the engine view THEN ignore toolbar heights`() {
         fragment.webAppToolbarShouldBeVisible = false
-        val configuration = Configuration().apply {
-            screenHeightDp = 700
-            screenWidthDp = 400
-        }
-        every { fragment.view } returns mockk {
-            every { context } returns testContext
-        }
-        every { settings.browserToolbarHeight } returns 11
+        val configuration =
+            Configuration().apply {
+                screenHeightDp = 700
+                screenWidthDp = 400
+            }
+        every { fragment.view } returns
+            mockk {
+                every { context } returns testContext
+            }
+        every { settings.getBrowserToolbarHeight(testContext) } returns 11
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
         every { settings.isDynamicToolbarEnabled } returns true
         every { settings.shouldUseExpandedToolbar } returns true
@@ -710,9 +752,7 @@ class BaseBrowserFragmentTest {
     fun `shouldAddBlackScreen returns true when all conditions are met`() {
         every { testContext.components.settings.privateBrowsingModeLocked } returns true
         every { testContext.components.appStore.state.mode.isPrivate } returns true
-        every { testContext.components.core.store.state } returns BrowserState(
-            systemPermissionRequestInProgress = true,
-        )
+        every { testContext.components.core.store.state } returns BrowserState(systemPermissionRequestInProgress = true)
         fragment.blackScreenOverlay = null
 
         assertTrue(fragment.shouldAddBlackScreen())
@@ -722,9 +762,7 @@ class BaseBrowserFragmentTest {
     fun `shouldAddBlackScreen returns false when private mode lock feature is off`() {
         every { testContext.components.settings.privateBrowsingModeLocked } returns false
         every { testContext.components.appStore.state.mode.isPrivate } returns true
-        every { testContext.components.core.store.state } returns BrowserState(
-            systemPermissionRequestInProgress = true,
-        )
+        every { testContext.components.core.store.state } returns BrowserState(systemPermissionRequestInProgress = true)
         fragment.blackScreenOverlay = null
 
         assertFalse(fragment.shouldAddBlackScreen())
@@ -734,9 +772,7 @@ class BaseBrowserFragmentTest {
     fun `shouldAddBlackScreen returns false when not in private mode`() {
         every { testContext.components.settings.privateBrowsingModeLocked } returns true
         every { testContext.components.appStore.state.mode.isPrivate } returns false
-        every { testContext.components.core.store.state } returns BrowserState(
-            systemPermissionRequestInProgress = true,
-        )
+        every { testContext.components.core.store.state } returns BrowserState(systemPermissionRequestInProgress = true)
         fragment.blackScreenOverlay = null
 
         assertFalse(fragment.shouldAddBlackScreen())
@@ -746,9 +782,8 @@ class BaseBrowserFragmentTest {
     fun `shouldAddBlackScreen returns false when permission request is not in progress`() {
         every { testContext.components.settings.privateBrowsingModeLocked } returns true
         every { testContext.components.appStore.state.mode.isPrivate } returns true
-        every { testContext.components.core.store.state } returns BrowserState(
-            systemPermissionRequestInProgress = false,
-        )
+        every { testContext.components.core.store.state } returns
+            BrowserState(systemPermissionRequestInProgress = false)
         fragment.blackScreenOverlay = null
 
         assertFalse(fragment.shouldAddBlackScreen())
@@ -758,9 +793,7 @@ class BaseBrowserFragmentTest {
     fun `shouldAddBlackScreen returns false when black screen overlay already exists`() {
         every { testContext.components.settings.privateBrowsingModeLocked } returns true
         every { testContext.components.appStore.state.mode.isPrivate } returns true
-        every { testContext.components.core.store.state } returns BrowserState(
-            systemPermissionRequestInProgress = true,
-        )
+        every { testContext.components.core.store.state } returns BrowserState(systemPermissionRequestInProgress = true)
         fragment.blackScreenOverlay = mockk()
 
         assertFalse(fragment.shouldAddBlackScreen())

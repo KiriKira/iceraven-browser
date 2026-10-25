@@ -11,10 +11,7 @@ import org.mozilla.fenix.settings.labs.store.DialogState
 import org.mozilla.fenix.settings.labs.store.LabsAction
 import org.mozilla.fenix.settings.labs.store.LabsState
 
-/**
- * Middleware that records Firefox Labs telemetry for the [LabsAction]s dispatched to the Labs
- * store.
- */
+/** Middleware that records Firefox Labs telemetry for the [LabsAction]s dispatched to the Labs store. */
 class LabsTelemetryMiddleware : Middleware<LabsState, LabsAction> {
 
     override fun invoke(
@@ -27,32 +24,35 @@ class LabsTelemetryMiddleware : Middleware<LabsState, LabsAction> {
                 if (action.items.isEmpty()) {
                     FirefoxLabs.emptyStateShown.record()
                 }
+                recordInitialLabsFetch(action)
             }
+            is LabsAction.FetchFailed -> FirefoxLabs.fetchFailed.record()
+            is LabsAction.ToggleCompleted ->
+                FirefoxLabs.toggleButtonPressed.record(
+                    FirefoxLabs.ToggleButtonPressedExtra(
+                        slugId = action.slug,
+                        enabled = action.enabled,
+                        status = action.status,
+                    )
+                )
+            is LabsAction.RestoreDefaultsCompleted ->
+                FirefoxLabs.restoreDefaultsDialog.record(
+                    FirefoxLabs.RestoreDefaultsDialogExtra(
+                        slugIds = action.itemsChanged.joinToString(","),
+                        count = action.itemsChanged.size,
+                        didUserConfirm = true,
+                        succeeded = action.succeeded,
+                    )
+                )
             is LabsAction.ToggleLabsItem -> {
                 if (store.state.dialogState is DialogState.ToggleLabsItem) {
                     FirefoxLabs.toggledDialog.record(
                         FirefoxLabs.ToggledDialogExtra(
                             slugId = action.item.slug,
                             didUserConfirm = true,
-                        ),
+                        )
                     )
                 }
-            }
-            is LabsAction.RestoreDefaults -> {
-                FirefoxLabs.restoreDefaultsDialog.record(
-                    FirefoxLabs.RestoreDefaultsDialogExtra(
-                        itemsChangedCount = store.state.labsItems.count { it.enrolled },
-                        didUserConfirm = true,
-                    ),
-                )
-            }
-            is LabsAction.ShowToggleLabsItemDialog -> {
-                FirefoxLabs.toggleButtonPressed.record(
-                    FirefoxLabs.ToggleButtonPressedExtra(
-                        slugId = action.item.slug,
-                        enabled = !action.item.enrolled,
-                    ),
-                )
             }
             is LabsAction.ShowRestoreDefaultsDialog -> {
                 FirefoxLabs.restoreDefaultsButtonPressed.record()
@@ -65,30 +65,38 @@ class LabsTelemetryMiddleware : Middleware<LabsState, LabsAction> {
                             FirefoxLabs.ToggledDialogExtra(
                                 slugId = dialog.item.slug,
                                 didUserConfirm = false,
-                            ),
+                            )
                         )
                     }
+                    // User canceled dialog
                     is DialogState.RestoreDefaults -> {
                         FirefoxLabs.restoreDefaultsDialog.record(
                             FirefoxLabs.RestoreDefaultsDialogExtra(
-                                itemsChangedCount = 0,
                                 didUserConfirm = false,
-                            ),
+                                slugIds = "",
+                                count = 0,
+                                succeeded = false,
+                            )
                         )
                     }
                     else -> Unit
                 }
             }
             is LabsAction.ShareFeedbackClicked -> {
-                FirefoxLabs.shareFeedbackOpened.record(
-                    FirefoxLabs.ShareFeedbackOpenedExtra(
-                        slugId = action.item.slug,
-                    ),
-                )
+                FirefoxLabs.shareFeedbackOpened.record(FirefoxLabs.ShareFeedbackOpenedExtra(slugId = action.item.slug))
             }
             else -> Unit
         }
 
         next(action)
+    }
+
+    private fun recordInitialLabsFetch(action: LabsAction.UpdateLabsItems) {
+        FirefoxLabs.initialLabsFetch.record(
+            FirefoxLabs.InitialLabsFetchExtra(
+                slugIds = action.items.joinToString(",") { it.slug },
+                count = action.items.size,
+            )
+        )
     }
 }

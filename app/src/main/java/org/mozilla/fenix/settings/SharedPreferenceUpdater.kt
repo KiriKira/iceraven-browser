@@ -11,8 +11,8 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 
 /**
- * Updates the corresponding [android.content.SharedPreferences] when the boolean [Preference] is changed.
- * The preference key is used as the shared preference key.
+ * Updates the corresponding [android.content.SharedPreferences] when the boolean [Preference] is changed. The
+ * preference key is used as the shared preference key.
  */
 open class SharedPreferenceUpdater : Preference.OnPreferenceChangeListener {
 

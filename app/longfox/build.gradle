@@ -5,12 +5,10 @@
  */
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.python.envs.plugin)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace 'org.mozilla.fenix.longfox'
@@ -29,10 +27,9 @@ android {
     buildFeatures {
         buildConfig true
     }
-}
-
-tasks.configureEach { task ->
-    task.dependsOn(":app:createBuildDir")
+    lint {
+        lintConfig = file("../../shared-lint.xml")
+    }
 }
 
 dependencies {
@@ -46,7 +43,7 @@ dependencies {
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.ui.tooling.preview
     implementation libs.androidx.compose.ui.graphics
-    implementation libs.androidx.core.ktx
+    implementation libs.androidx.core
     implementation libs.androidx.lifecycle.runtime
     implementation libs.androidx.datastore.core
     implementation libs.androidx.datastore.preferences
@@ -69,7 +66,7 @@ dependencies {
 ext {
     gleanExpireByVersion = Config.majorVersion(project)
     gleanNamespace = "mozilla.telemetry.glean"
-    // gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
+    gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
     gleanYamlFiles = [
             "${project.projectDir}/metrics.yaml",
     ]

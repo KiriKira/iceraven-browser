@@ -33,11 +33,15 @@
     <attr name="colorOnInformationContainer" format="reference" />
     <attr name="colorSuccess" format="reference" />
     <attr name="colorOnSuccess" format="reference" />
+    <attr name="colorSuccessContainer" format="reference" />
+    <attr name="colorOnSuccessContainer" format="reference" />
     <attr name="colorWarning" format="reference" />
     <attr name="colorOnWarning" format="reference" />
     <attr name="colorWarningContainer" format="reference" />
     <attr name="colorOnWarningContainer" format="reference" />
     <attr name="colorSurfaceDimVariant" format="reference" />
+    <attr name="colorSurfaceContainerSelected" format="reference" />
+    <attr name="colorSheetOutline" format="reference" />
     <attr name="colorAutofillText" format="reference" />
     <attr name="colorSelectedText" format="reference" />
     <attr name="colorIconPrivate" format="reference" />
@@ -56,7 +60,6 @@
     <attr name="fenixLogo" format="reference" />
     <attr name="fenixWordmarkText" format="reference" />
     <attr name="fenixWordmarkLogo" format="reference" />
-    <attr name="fenixWordmarkSportLogo" format="reference" />
     <attr name="toolbarStartGradient" format="reference"/>
     <attr name="toolbarCenterGradient" format="reference"/>
     <attr name="toolbarEndGradient" format="reference"/>
@@ -65,18 +68,9 @@
     <attr name="awesomeBarIndicatorColor" format="reference|color"/>
     <attr name="awesomeBarIndicatorBookmarkColor" format="reference|color"/>
 
-    <declare-styleable name="TrackingProtectionCategory">
+    <declare-styleable name="TrackingProtectionCategoryItem">
         <attr name="categoryItemTitle" format="reference" />
         <attr name="categoryItemDescription" format="reference" />
-    </declare-styleable>
-
-    <declare-styleable name="SwitchWithDescription">
-        <attr name="switchTitle" format="reference" />
-        <attr name="switchDescriptionOn" format="reference" />
-        <attr name="switchDescriptionOff" format="reference" />
-        <attr name="switchIconOn" format="reference" />
-        <attr name="switchIconOff" format="reference" />
-        <attr name="switchShowIcon" format="boolean" />
     </declare-styleable>
 
     <declare-styleable name="DeleteBrowsingDataItem">

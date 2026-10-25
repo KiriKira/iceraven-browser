@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import mozilla.components.service.pocket.PocketStoriesService
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
-import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.service.pocket.PocketStory.SponsoredContentCallbacks
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
@@ -33,97 +32,98 @@ import org.mozilla.fenix.datastore.SelectedPocketStoriesCategories.SelectedPocke
 import org.mozilla.fenix.home.pocket.PocketImpression
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesSelectedCategory
+import org.mozilla.fenix.home.pocket.controller.StoriesImpressionSource
 
 class PocketMiddlewareTest {
 
     @Test
     fun `WHEN PocketStoriesShown is dispatched THEN update PocketStoriesService`() = runTest {
-        val story1 = PocketRecommendedStory(
-            "title",
-            "url1",
-            "imageUrl",
-            "publisher",
-            "category",
-            0,
-            timesShown = 0,
-        )
-        val story2 = story1.copy("title2", "url2")
-        val story3 = story1.copy("title3", "url3")
+        val recommendation =
+            ContentRecommendation(
+                corpusItemId = "0",
+                scheduledCorpusItemId = "1",
+                url = "testUrl",
+                title = "",
+                excerpt = "",
+                topic = "",
+                publisher = "",
+                isTimeSensitive = false,
+                imageUrl = "",
+                tileId = 1,
+                receivedRank = 33,
+                recommendedAt = 1L,
+                impressions = 0,
+            )
         val pocketService: PocketStoriesService = mockk(relaxed = true)
-        val pocketMiddleware = PocketMiddleware(
-            lazy { pocketService },
-            mockk(),
-            FakePocketSettings(),
-            RunWhenReadyQueue(this),
-            this,
-        )
-        val appstore = AppStore(
-            AppState(
-                recommendationState = ContentRecommendationsState(
-                    pocketStories = listOf(story1, story2, story3),
-                ),
-            ),
-            listOf(pocketMiddleware),
-        )
+        val pocketMiddleware =
+            PocketMiddleware(
+                lazy { pocketService },
+                mockk(),
+                FakePocketSettings(),
+                RunWhenReadyQueue(this),
+                this,
+            )
+        val appstore =
+            AppStore(
+                AppState(),
+                listOf(pocketMiddleware),
+            )
 
         appstore.dispatch(
             ContentRecommendationsAction.PocketStoriesShown(
-                impressions = listOf(
-                    PocketImpression(
-                        story = story2,
-                        position = 1,
+                impressions =
+                    listOf(
+                        PocketImpression(
+                            story = recommendation,
+                            position = 1,
+                        )
                     ),
-                ),
-            ),
+                source = StoriesImpressionSource.HOMEPAGE,
+            )
         )
         testScheduler.advanceUntilIdle()
 
-        coVerify { pocketService.updateStoriesTimesShown(listOf(story2.copy(timesShown = 1))) }
+        coVerify {
+            pocketService.updateRecommendationsImpressions(listOf(recommendation.copy(impressions = 1)))
+        }
     }
 
     @Test
     fun `WHEN needing to persist impressions is called THEN update PocketStoriesService`() = runTest {
-        val story = PocketRecommendedStory(
-            "title",
-            "url1",
-            "imageUrl",
-            "publisher",
-            "category",
-            0,
-            timesShown = 3,
-        )
-        val recommendation = ContentRecommendation(
-            corpusItemId = "0",
-            scheduledCorpusItemId = "1",
-            url = "testUrl",
-            title = "",
-            excerpt = "",
-            topic = "",
-            publisher = "",
-            isTimeSensitive = false,
-            imageUrl = "",
-            tileId = 1,
-            receivedRank = 33,
-            recommendedAt = 1L,
-            impressions = 0,
-        )
-        val sponsoredContent = SponsoredContent(
-            url = "https://firefox.com",
-            title = "Firefox",
-            callbacks = SponsoredContentCallbacks(
-                clickUrl = "https://firefox.com/click",
-                impressionUrl = "https://firefox.com/impression",
-            ),
-            imageUrl = "https://test.com/image1.jpg",
-            domain = "firefox.com",
-            excerpt = "Mozilla Firefox",
-            sponsor = "Mozilla",
-            blockKey = "1",
-            caps = mockk(relaxed = true),
-            priority = 3,
-        )
-        val stories = listOf(story, recommendation, sponsoredContent)
-        val expectedStoryUpdate = story.copy(timesShown = story.timesShown.inc())
+        val recommendation =
+            ContentRecommendation(
+                corpusItemId = "0",
+                scheduledCorpusItemId = "1",
+                url = "testUrl",
+                title = "",
+                excerpt = "",
+                topic = "",
+                publisher = "",
+                isTimeSensitive = false,
+                imageUrl = "",
+                tileId = 1,
+                receivedRank = 33,
+                recommendedAt = 1L,
+                impressions = 0,
+            )
+        val sponsoredContent =
+            SponsoredContent(
+                url = "https://firefox.com",
+                title = "Firefox",
+                callbacks =
+                    SponsoredContentCallbacks(
+                        clickUrl = "https://firefox.com/click",
+                        impressionUrl = "https://firefox.com/impression",
+                    ),
+                imageUrl = "https://test.com/image1.jpg",
+                domain = "firefox.com",
+                excerpt = "Mozilla Firefox",
+                sponsor = "Mozilla",
+                blockKey = "1",
+                caps = mockk(relaxed = true),
+                priority = 3,
+            )
+        val stories = listOf(recommendation, sponsoredContent)
         val expectedRecommendationUpdate = recommendation.copy(impressions = recommendation.impressions.inc())
 
         val pocketService: PocketStoriesService = mockk(relaxed = true)
@@ -136,70 +136,72 @@ class PocketMiddlewareTest {
         testScheduler.advanceUntilIdle()
 
         coVerify {
-            pocketService.updateStoriesTimesShown(listOf(expectedStoryUpdate))
             pocketService.updateRecommendationsImpressions(listOf(expectedRecommendationUpdate))
             pocketService.recordSponsoredContentImpressions(impressions = listOf(sponsoredContent.url))
         }
     }
 
     @Test
-    fun `WHEN PocketStoriesCategoriesChange is dispatched THEN intercept and dispatch PocketStoriesCategoriesSelectionsChange`() = runTest {
-        val dataStore = FakeDataStore()
-        val currentCategories = listOf<PocketRecommendedStoriesCategory>()
-        val pocketMiddleware = PocketMiddleware(
-            mockk(),
-            dataStore,
-            FakePocketSettings(),
-            RunWhenReadyQueue(this),
-            this,
-        )
-        val appStore = spyk(
-            AppStore(
-                AppState(
-                    recommendationState = ContentRecommendationsState(
-                        pocketStoriesCategories = currentCategories,
-                    ),
-                ),
-                listOf(pocketMiddleware),
-            ),
-        )
+    fun `WHEN PocketStoriesCategoriesChange is dispatched THEN intercept and dispatch PocketStoriesCategoriesSelectionsChange`() =
+        runTest {
+            val dataStore = FakeDataStore()
+            val currentCategories = listOf<PocketRecommendedStoriesCategory>()
+            val pocketMiddleware =
+                PocketMiddleware(
+                    mockk(),
+                    dataStore,
+                    FakePocketSettings(),
+                    RunWhenReadyQueue(this),
+                    this,
+                )
+            val appStore =
+                spyk(
+                    AppStore(
+                        AppState(
+                            recommendationState =
+                                ContentRecommendationsState(pocketStoriesCategories = currentCategories)
+                        ),
+                        listOf(pocketMiddleware),
+                    )
+                )
 
-        appStore.dispatch(ContentRecommendationsAction.PocketStoriesCategoriesChange(currentCategories))
+            appStore.dispatch(ContentRecommendationsAction.PocketStoriesCategoriesChange(currentCategories))
 
-        testScheduler.advanceUntilIdle()
+            testScheduler.advanceUntilIdle()
 
-        verify {
-            appStore.dispatch(
-                PocketStoriesCategoriesSelectionsChange(
-                    storiesCategories = currentCategories,
-                    categoriesSelected = listOf(),
-                ),
-            )
+            verify {
+                appStore.dispatch(
+                    PocketStoriesCategoriesSelectionsChange(
+                        storiesCategories = currentCategories,
+                        categoriesSelected = listOf(),
+                    )
+                )
+            }
         }
-    }
 
     @Test
     fun `WHEN SelectPocketStoriesCategory is dispatched THEN persist details in DataStore and in memory`() = runTest {
         val categ1 = PocketRecommendedStoriesCategory("categ1")
         val categ2 = PocketRecommendedStoriesCategory("categ2")
         val dataStore = FakeDataStore()
-        val pocketMiddleware = PocketMiddleware(
-            mockk(),
-            dataStore,
-            FakePocketSettings(),
-            RunWhenReadyQueue(this),
-            this,
-        )
-        val appStore = spyk(
-            AppStore(
-                AppState(
-                    recommendationState = ContentRecommendationsState(
-                        pocketStoriesCategories = listOf(categ1, categ2),
+        val pocketMiddleware =
+            PocketMiddleware(
+                mockk(),
+                dataStore,
+                FakePocketSettings(),
+                RunWhenReadyQueue(this),
+                this,
+            )
+        val appStore =
+            spyk(
+                AppStore(
+                    AppState(
+                        recommendationState =
+                            ContentRecommendationsState(pocketStoriesCategories = listOf(categ1, categ2))
                     ),
-                ),
-                listOf(pocketMiddleware),
-            ),
-        )
+                    listOf(pocketMiddleware),
+                )
+            )
 
         testScheduler.advanceUntilIdle()
 
@@ -226,24 +228,27 @@ class PocketMiddlewareTest {
         val persistedCateg1 = PocketRecommendedStoriesSelectedCategory("categ1")
         val persistedCateg2 = PocketRecommendedStoriesSelectedCategory("categ2")
         val dataStore = FakeDataStore(persistedCateg1.name, persistedCateg2.name)
-        val pocketMiddleware = PocketMiddleware(
-            mockk(),
-            dataStore,
-            FakePocketSettings(),
-            RunWhenReadyQueue(this),
-            this,
-        )
-        val appStore = spyk(
-            AppStore(
-                AppState(
-                    recommendationState = ContentRecommendationsState(
-                        pocketStoriesCategories = listOf(categ1, categ2),
-                        pocketStoriesCategoriesSelections = listOf(persistedCateg1, persistedCateg2),
+        val pocketMiddleware =
+            PocketMiddleware(
+                mockk(),
+                dataStore,
+                FakePocketSettings(),
+                RunWhenReadyQueue(this),
+                this,
+            )
+        val appStore =
+            spyk(
+                AppStore(
+                    AppState(
+                        recommendationState =
+                            ContentRecommendationsState(
+                                pocketStoriesCategories = listOf(categ1, categ2),
+                                pocketStoriesCategoriesSelections = listOf(persistedCateg1, persistedCateg2),
+                            )
                     ),
-                ),
-                listOf(pocketMiddleware),
-            ),
-        )
+                    listOf(pocketMiddleware),
+                )
+            )
 
         dataStore.assertSelectedCategories(persistedCateg1.name, persistedCateg2.name)
         appStore.assertSelectedCategories(persistedCateg1.name, persistedCateg2.name)
@@ -274,40 +279,43 @@ class PocketMiddlewareTest {
     }
 
     @Test
-    fun `WHEN restoreSelectedCategories is called THEN dispatch PocketStoriesCategoriesSelectionsChange with data read from the persistence layer`() = runTest {
-        val dataStore = FakeDataStore("testCategory")
-        val currentCategories = listOf<PocketRecommendedStoriesCategory>()
-        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
-        val appStore = AppStore(
-            initialState = AppState(),
-            middlewares = listOf(captorMiddleware),
-        )
+    fun `WHEN restoreSelectedCategories is called THEN dispatch PocketStoriesCategoriesSelectionsChange with data read from the persistence layer`() =
+        runTest {
+            val dataStore = FakeDataStore("testCategory")
+            val currentCategories = listOf<PocketRecommendedStoriesCategory>()
+            val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+            val appStore =
+                AppStore(
+                    initialState = AppState(),
+                    middlewares = listOf(captorMiddleware),
+                )
 
-        restoreSelectedCategories(
-            coroutineScope = this,
-            currentCategories = currentCategories,
-            store = appStore,
-            selectedPocketCategoriesDataStore = dataStore,
-        )
+            restoreSelectedCategories(
+                coroutineScope = this,
+                currentCategories = currentCategories,
+                store = appStore,
+                selectedPocketCategoriesDataStore = dataStore,
+            )
 
-        testScheduler.advanceUntilIdle()
+            testScheduler.advanceUntilIdle()
 
-        captorMiddleware.assertLastAction(PocketStoriesCategoriesSelectionsChange::class) {
-            assertEquals(1, it.categoriesSelected.size)
-            assertEquals("testCategory", it.categoriesSelected[0].name)
+            captorMiddleware.assertLastAction(PocketStoriesCategoriesSelectionsChange::class) {
+                assertEquals(1, it.categoriesSelected.size)
+                assertEquals("testCategory", it.categoriesSelected[0].name)
+            }
         }
-    }
 
     @Test
     fun `GIVEN pocket settings are true WHEN App is Started THEN start the Pocket workers`() = runTest {
         val pocketService: PocketStoriesService = mockk(relaxed = true)
-        val pocketMiddleware = PocketMiddleware(
-            lazy { pocketService },
-            mockk(),
-            FakePocketSettings(),
-            RunWhenReadyQueue(this).also { it.ready() },
-            this,
-        )
+        val pocketMiddleware =
+            PocketMiddleware(
+                lazy { pocketService },
+                mockk(),
+                FakePocketSettings(),
+                RunWhenReadyQueue(this).also { it.ready() },
+                this,
+            )
 
         pocketMiddleware.invoke(mockk(relaxed = true), {}, AppAction.AppLifecycleAction.StartAction)
         testScheduler.advanceUntilIdle()
@@ -321,13 +329,14 @@ class PocketMiddlewareTest {
     @Test
     fun `GIVEN pocket settings are false WHEN App is Started THEN don't start the Pocket workers`() = runTest {
         val pocketService: PocketStoriesService = mockk(relaxed = true)
-        val pocketMiddleware = PocketMiddleware(
-            lazy { pocketService },
-            mockk(),
-            FakePocketSettings(showPocketRecommendationsFeature = false, showPocketSponsoredStories = false),
-            RunWhenReadyQueue(this).also { it.ready() },
-            this,
-        )
+        val pocketMiddleware =
+            PocketMiddleware(
+                lazy { pocketService },
+                mockk(),
+                FakePocketSettings(showPocketRecommendationsFeature = false, showPocketSponsoredStories = false),
+                RunWhenReadyQueue(this).also { it.ready() },
+                this,
+            )
 
         pocketMiddleware.invoke(mockk(), {}, AppAction.AppLifecycleAction.StartAction)
 
@@ -339,24 +348,26 @@ class PocketMiddlewareTest {
 }
 
 /**
- * Incomplete fake of a [DataStore].
- * Respects the [DataStore] contract with basic method implementations but needs to have mocked behavior
- * for more complex interactions.
- * Can be used as a replacement for mocks of the [DataStore] interface which might fail intermittently.
+ * Incomplete fake of a [DataStore]. Respects the [DataStore] contract with basic method implementations but needs to
+ * have mocked behavior for more complex interactions. Can be used as a replacement for mocks of the [DataStore]
+ * interface which might fail intermittently.
  */
-class FakeDataStore(
-    vararg initialSelectedCategories: String,
-) : DataStore<SelectedPocketStoriesCategories> {
+class FakeDataStore(vararg initialSelectedCategories: String) : DataStore<SelectedPocketStoriesCategories> {
     val initialSelection: List<SelectedPocketStoriesCategory> = initialSelectedCategories.map {
-        SelectedPocketStoriesCategory.newBuilder().apply {
-            name = it
-            setSelectionTimestamp(System.currentTimeMillis())
-        }.build()
+        SelectedPocketStoriesCategory.newBuilder()
+            .apply {
+                name = it
+                setSelectionTimestamp(System.currentTimeMillis())
+            }
+            .build()
     }
 
-    private val persistedSelectedCategories = SelectedPocketStoriesCategories.newBuilder().apply {
-        initialSelection.forEach { addValues(it) }
-    }.build()
+    private val persistedSelectedCategories =
+        SelectedPocketStoriesCategories.newBuilder()
+            .apply {
+                initialSelection.forEach { addValues(it) }
+            }
+            .build()
 
     var currentCategorySelection: SelectedPocketStoriesCategories = persistedSelectedCategories
         private set
@@ -365,7 +376,7 @@ class FakeDataStore(
         get() = flowOf(persistedSelectedCategories)
 
     override suspend fun updateData(
-        transform: suspend (t: SelectedPocketStoriesCategories) -> SelectedPocketStoriesCategories,
+        transform: suspend (t: SelectedPocketStoriesCategories) -> SelectedPocketStoriesCategories
     ): SelectedPocketStoriesCategories {
         return transform(persistedSelectedCategories).apply {
             currentCategorySelection = this
@@ -379,8 +390,8 @@ data class FakePocketSettings(
 ) : PocketSettings
 
 /**
- * Assert that the Pocket categories with [expected] names are currently selected
- * and that this selection happened in the past 10 seconds.
+ * Assert that the Pocket categories with [expected] names are currently selected and that this selection happened in
+ * the past 10 seconds.
  */
 private fun FakeDataStore.assertSelectedCategories(vararg expected: String) {
     val now = System.currentTimeMillis()
@@ -393,8 +404,8 @@ private fun FakeDataStore.assertSelectedCategories(vararg expected: String) {
 }
 
 /**
- * Assert that the Pocket categories with [expected] names are currently selected
- * and that this selection happened in the past 10 seconds.
+ * Assert that the Pocket categories with [expected] names are currently selected and that this selection happened in
+ * the past 10 seconds.
  */
 private fun AppStore.assertSelectedCategories(vararg expected: String) {
     val now = System.currentTimeMillis()

@@ -5,6 +5,7 @@
 package org.mozilla.fenix.home.pocket.controller
 
 import androidx.navigation.NavController
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mozilla.components.service.pocket.PocketStory
@@ -28,20 +29,25 @@ import org.mozilla.fenix.home.pocket.interactor.PocketStoriesInteractor
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.Stories.markAsOpenedFromHomeScreen
 import org.mozilla.fenix.utils.Stories.markAsOpenedFromStoriesScreen
-import java.lang.ref.WeakReference
 
 private const val POCKET_CATEGORIES_SELECTED_AT_A_TIME_COUNT = 8
 
 /**
- * Contract for how all user interactions with the Pocket stories feature are to be handled.
+ * The surface where a Pocket stories impression was recorded. Used as the `source` extra on the
+ * `pocket.home_recs_shown` Glean event.
  */
+enum class StoriesImpressionSource(val sourceName: String) {
+    HOMEPAGE("homepage"),
+    STORIES_SCREEN("stories_screen"),
+}
+
+/** Contract for how all user interactions with the Pocket stories feature are to be handled. */
 interface PocketStoriesController {
     /**
      * Callback to decide what should happen as an effect of a specific story being shown.
      *
      * @param storyShown The just shown [PocketStory].
-     * @param storyPosition `row x column x index` matrix representing the grid and index position
-     * of the shown story.
+     * @param storyPosition `row x column x index` matrix representing the grid and index position of the shown story.
      */
     fun handleStoryShown(storyShown: PocketStory, storyPosition: Triple<Int, Int, Int>)
 
@@ -49,8 +55,9 @@ interface PocketStoriesController {
      * Callback to decide what should happen as an effect of a new list of stories being shown.
      *
      * @param storiesShown the new list of [PocketStory]es shown to the user.
+     * @param source The surface where the stories were shown.
      */
-    fun handleStoriesShown(storiesShown: List<PocketStory>)
+    fun handleStoriesShown(storiesShown: List<PocketStory>, source: StoriesImpressionSource)
 
     /**
      * Callback allowing to handle a specific [PocketRecommendedStoriesCategory] being clicked by the user.
@@ -63,19 +70,19 @@ interface PocketStoriesController {
      * Callback for when the user clicks on a specific story.
      *
      * @param storyClicked The just clicked [PocketStory].
-     * @param storyPosition `row x column x index` matrix representing the grid and index position
-     * of the clicked story.
+     * @param storyPosition `row x column x index` matrix representing the grid and index position of the clicked story.
+     * @param source The surface where the clicked story was shown.
      */
-    fun handleStoryClicked(storyClicked: PocketStory, storyPosition: Triple<Int, Int, Int>)
+    fun handleStoryClicked(
+        storyClicked: PocketStory,
+        storyPosition: Triple<Int, Int, Int>,
+        source: StoriesImpressionSource,
+    )
 
-    /**
-     * Callback for when the user clicks on the "Discover more" button.
-     */
+    /** Callback for when the user clicks on the "Discover more" button. */
     fun handleDiscoverMoreClicked()
 
-    /**
-     * @see [PocketStoriesInteractor.onDiscoverMoreScreenViewed]
-     */
+    /** @see [PocketStoriesInteractor.onDiscoverMoreScreenViewed] */
     fun handleDiscoverMoreScreenViewed()
 }
 
@@ -86,8 +93,7 @@ interface PocketStoriesController {
  * @param appStore [AppStore] from which to read the current Pocket recommendations and dispatch new actions on.
  * @param settings [Settings] used to check the application shared preferences.
  * @param fenixBrowserUseCases [FenixBrowserUseCases] used to open the story when clicked.
- * @param marsUseCases [MARSUseCases] used for handling the sponsored content click and impression
- * recording.
+ * @param marsUseCases [MARSUseCases] used for handling the sponsored content click and impression recording.
  * @param viewLifecycleScope The [CoroutineScope] to use for launching coroutines.
  */
 internal class DefaultPocketStoriesController(
@@ -108,13 +114,15 @@ internal class DefaultPocketStoriesController(
     ) {
         appStore.dispatch(
             ContentRecommendationsAction.PocketStoriesShown(
-                impressions = listOf(
-                    PocketImpression(
-                        story = storyShown,
-                        position = storyPosition.third,
+                impressions =
+                    listOf(
+                        PocketImpression(
+                            story = storyShown,
+                            position = storyPosition.third,
+                        )
                     ),
-                ),
-            ),
+                source = StoriesImpressionSource.HOMEPAGE,
+            )
         )
 
         when (storyShown) {
@@ -123,7 +131,7 @@ internal class DefaultPocketStoriesController(
                     Pocket.HomeRecsSpocShownExtra(
                         position = "${storyPosition.first}x${storyPosition.second}",
                         timesShown = storyShown.getCurrentFlightImpressions().size.inc().toString(),
-                    ),
+                    )
                 )
 
                 viewLifecycleScope.launch {
@@ -138,23 +146,27 @@ internal class DefaultPocketStoriesController(
         }
     }
 
-    override fun handleStoriesShown(storiesShown: List<PocketStory>) {
+    override fun handleStoriesShown(
+        storiesShown: List<PocketStory>,
+        source: StoriesImpressionSource,
+    ) {
         // Only report here the impressions for recommended stories.
         // Sponsored stories use a different API for more accurate tracking.
         appStore.dispatch(
             ContentRecommendationsAction.PocketStoriesShown(
-                impressions = storiesShown
-                    .filter { it is ContentRecommendation || it is PocketRecommendedStory }
-                    .map { PocketImpression(story = it, position = storiesShown.indexOf(it)) },
-            ),
+                impressions =
+                    storiesShown
+                        .filter { it is ContentRecommendation || it is PocketRecommendedStory }
+                        .map { PocketImpression(story = it, position = storiesShown.indexOf(it)) },
+                source = source,
+            )
         )
 
-        Pocket.homeRecsShown.record(NoExtras())
+        Pocket.homeRecsShown.record(Pocket.HomeRecsShownExtra(source = source.sourceName))
     }
 
     override fun handleCategoryClick(categoryClicked: PocketRecommendedStoriesCategory) {
-        val initialCategoriesSelections =
-            appStore.state.recommendationState.pocketStoriesCategoriesSelections
+        val initialCategoriesSelections = appStore.state.recommendationState.pocketStoriesCategoriesSelections
 
         // First check whether the category is clicked to be deselected.
         if (initialCategoriesSelections.map { it.name }.contains(categoryClicked.name)) {
@@ -164,7 +176,7 @@ internal class DefaultPocketStoriesController(
                     categoryName = categoryClicked.name,
                     newState = "deselected",
                     selectedTotal = initialCategoriesSelections.size.toString(),
-                ),
+                )
             )
             return
         }
@@ -189,19 +201,21 @@ internal class DefaultPocketStoriesController(
                 categoryName = categoryClicked.name,
                 newState = "selected",
                 selectedTotal = initialCategoriesSelections.size.toString(),
-            ),
+            )
         )
     }
 
     override fun handleStoryClicked(
         storyClicked: PocketStory,
         storyPosition: Triple<Int, Int, Int>,
+        source: StoriesImpressionSource,
     ) {
-        val storyUrl = when (navController.currentDestination?.id) {
-            R.id.storiesFragment -> storyClicked.url.markAsOpenedFromStoriesScreen()
-            R.id.homeFragment -> storyClicked.url.markAsOpenedFromHomeScreen()
-            else -> storyClicked.url
-        }
+        val storyUrl =
+            when (navController.currentDestination?.id) {
+                R.id.storiesFragment -> storyClicked.url.markAsOpenedFromStoriesScreen()
+                R.id.homeFragment -> storyClicked.url.markAsOpenedFromHomeScreen()
+                else -> storyClicked.url
+            }
 
         navController.navigate(R.id.browserFragment)
         fenixBrowserUseCases.loadUrlOrSearch(
@@ -216,7 +230,8 @@ internal class DefaultPocketStoriesController(
                     Pocket.HomeRecsStoryClickedExtra(
                         position = "${storyPosition.first}x${storyPosition.second}",
                         timesShown = storyClicked.timesShown.inc().toString(),
-                    ),
+                        source = source.sourceName,
+                    )
                 )
             }
 
@@ -225,7 +240,8 @@ internal class DefaultPocketStoriesController(
                     ContentRecommendationsAction.ContentRecommendationClicked(
                         recommendation = storyClicked,
                         position = storyPosition.third,
-                    ),
+                        source = source,
+                    )
                 )
             }
 
@@ -234,7 +250,7 @@ internal class DefaultPocketStoriesController(
                     Pocket.HomeRecsSpocClickedExtra(
                         position = "${storyPosition.first}x${storyPosition.second}",
                         timesShown = storyClicked.getCurrentFlightImpressions().size.inc().toString(),
-                    ),
+                    )
                 )
 
                 viewLifecycleScope.launch {

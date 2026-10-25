@@ -8,13 +8,12 @@ import android.content.Context
 import android.os.RemoteException
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.utils.Settings
-import java.util.concurrent.TimeUnit
 
 /**
  * A metrics service used to derive the UTM parameters with the Google Play Install Referrer library.
  *
- * This service delegates all attribution retrieval to [InstallReferrerWorker], which handles
- * the initial attempt and any necessary retries with exponential backoff.
+ * This service delegates all attribution retrieval to [InstallReferrerWorker], which handles the initial attempt and
+ * any necessary retries with exponential backoff.
  */
 class InstallReferrerMetricsService(
     private val context: Context,
@@ -30,8 +29,9 @@ class InstallReferrerMetricsService(
         }
     }
 
-    override fun stop() {
-    }
+    override fun stop() = Unit
+
+    private fun scheduleWorker() {}
 
     override fun track(event: Event) = Unit
 

@@ -27,10 +27,9 @@ import org.mozilla.fenix.telemetry.SOURCE_BROWSER_START
 import org.mozilla.fenix.telemetry.SOURCE_NAVIGATION_BAR
 import org.mozilla.fenix.telemetry.SOURCE_PAGE_END
 import org.mozilla.fenix.telemetry.SOURCE_PAGE_START
+import org.mozilla.fenix.telemetry.SURFACE_HOME
 
-/**
- * [Middleware] responsible for recording telemetry of actions triggered by compose toolbars.
- */
+/** [Middleware] responsible for recording telemetry of actions triggered by compose toolbars. */
 class BrowserToolbarTelemetryMiddleware : Middleware<BrowserToolbarState, BrowserToolbarAction> {
     override fun invoke(
         store: Store<BrowserToolbarState, BrowserToolbarAction>,
@@ -61,9 +60,13 @@ class BrowserToolbarTelemetryMiddleware : Middleware<BrowserToolbarState, Browse
     @VisibleForTesting
     internal sealed class ToolbarActionRecord(val action: String) {
         data object MenuClicked : ToolbarActionRecord(ACTION_MENU_CLICKED)
+
         data object TabCounterClicked : ToolbarActionRecord(ACTION_TAB_COUNTER_CLICKED)
+
         data object TabCounterLongClicked : ToolbarActionRecord(ACTION_TAB_COUNTER_LONG_CLICKED)
+
         data object AddNewTab : ToolbarActionRecord(ACTION_ADD_NEW_TAB)
+
         data object AddNewPrivateTab : ToolbarActionRecord(ACTION_ADD_NEW_PRIVATE_TAB)
     }
 
@@ -78,7 +81,8 @@ class BrowserToolbarTelemetryMiddleware : Middleware<BrowserToolbarState, Browse
                         source = SOURCE_ADDRESS_BAR,
                         item = toolbarActionRecord.action,
                         extra = source.telemetryName(),
-                    ),
+                        surface = SURFACE_HOME,
+                    )
                 )
 
             Source.NavigationBar ->
@@ -86,7 +90,8 @@ class BrowserToolbarTelemetryMiddleware : Middleware<BrowserToolbarState, Browse
                     Toolbar.ButtonTappedExtra(
                         source = SOURCE_NAVIGATION_BAR,
                         item = toolbarActionRecord.action,
-                    ),
+                        surface = SURFACE_HOME,
+                    )
                 )
 
             Source.Unknown -> return

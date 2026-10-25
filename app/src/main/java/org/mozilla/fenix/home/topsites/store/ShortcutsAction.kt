@@ -6,16 +6,15 @@ package org.mozilla.fenix.home.topsites.store
 
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.lib.state.Action
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 
-/**
- * Actions to dispatch through the [ShortcutsStore] to modify the [ShortcutsState].
- */
+/** Actions to dispatch through the [ShortcutsStore] to modify the [ShortcutsState]. */
 sealed class ShortcutsAction : Action {
 
     /**
-     * [ShortcutsAction] dispatched to indicate that the store is initialized and ready to use.
-     * This action is dispatched automatically before any other action is processed.
-     * Its main purpose is to trigger initialization logic in middlewares.
+     * [ShortcutsAction] dispatched to indicate that the store is initialized and ready to use. This action is
+     * dispatched automatically before any other action is processed. Its main purpose is to trigger initialization
+     * logic in middlewares.
      */
     data object InitAction : ShortcutsAction()
 
@@ -40,19 +39,13 @@ sealed class ShortcutsAction : Action {
      */
     data class UpdateShowAddShortcut(val showAddShortcut: Boolean) : ShortcutsAction()
 
-    /**
-     * [ShortcutsAction] dispatched to show the bottom sheet for adding a new shortcut.
-     */
+    /** [ShortcutsAction] dispatched to show the bottom sheet for adding a new shortcut. */
     data object ShowAddShortcutBottomSheet : ShortcutsAction()
 
-    /**
-     * [ShortcutsAction] dispatched to show the dialog for adding a new shortcut.
-     */
+    /** [ShortcutsAction] dispatched to show the dialog for adding a new shortcut. */
     data object ShowAddShortcutDialog : ShortcutsAction()
 
-    /**
-     * [ShortcutsAction] dispatched to close the current dialog.
-     */
+    /** [ShortcutsAction] dispatched to close the current dialog. */
     data object CloseDialog : ShortcutsAction()
 
     /**
@@ -60,6 +53,11 @@ sealed class ShortcutsAction : Action {
      *
      * @property title The title for the new shortcut.
      * @property url The URL for the new shortcut.
+     * @property source The [AddShortcutSource] of how the shortcut was added.
      */
-    data class SaveShortcut(val title: String, val url: String) : ShortcutsAction()
+    data class SaveShortcut(
+        val title: String,
+        val url: String,
+        val source: AddShortcutSource,
+    ) : ShortcutsAction()
 }

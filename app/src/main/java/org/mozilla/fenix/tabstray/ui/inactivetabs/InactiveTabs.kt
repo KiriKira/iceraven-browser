@@ -38,13 +38,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.cfr.CFRPopup
+import mozilla.components.compose.cfr.CFRPopupBackground
 import mozilla.components.compose.cfr.CFRPopupLayout
 import mozilla.components.compose.cfr.CFRPopupProperties
+import mozilla.components.ui.colors.NovaColors
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.ExpandableListHeader
 import org.mozilla.fenix.ext.toShortUrl
@@ -52,7 +57,6 @@ import org.mozilla.fenix.tabstray.data.TabsTrayItem
 import org.mozilla.fenix.tabstray.data.createTab
 import org.mozilla.fenix.tabstray.ui.tabitems.BasicTabListItem
 import org.mozilla.fenix.theme.FirefoxTheme
-import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Top-level list for displaying an expandable section of Inactive Tabs.
@@ -89,10 +93,11 @@ fun InactiveTabsList(
     onCFRDismiss: () -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            contentColor = MaterialTheme.colorScheme.secondary,
-        ),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                contentColor = MaterialTheme.colorScheme.secondary,
+            ),
         shape = MaterialTheme.shapes.medium,
     ) {
         InactiveTabsHeader(
@@ -119,10 +124,11 @@ fun InactiveTabsList(
 
             inactiveTabs.forEachIndexed { index, tab ->
                 val tabUrl = tab.url.toShortUrl()
-                val faviconPainter = tab.icon?.run {
-                    prepareToDraw()
-                    BitmapPainter(asImageBitmap())
-                }
+                val faviconPainter =
+                    tab.icon?.run {
+                        prepareToDraw()
+                        BitmapPainter(asImageBitmap())
+                    }
 
                 BasicTabListItem(
                     title = tab.title,
@@ -164,22 +170,20 @@ private fun InactiveTabsHeader(
 ) {
     CFRPopupLayout(
         showCFR = showCFR,
-        properties = CFRPopupProperties(
-            popupBodyColors = listOf(
-                FirefoxTheme.colors.layerGradientEnd.toArgb(),
-                FirefoxTheme.colors.layerGradientStart.toArgb(),
+        properties =
+            CFRPopupProperties(
+                popupBodyColors = CFRPopupBackground.Gradient(brush = FirefoxTheme.gradients.cfr.brush),
+                dismissButtonColor = NovaColors.White.toArgb(),
+                indicatorDirection = CFRPopup.IndicatorDirection.UP,
+                popupVerticalOffset = (-12).dp,
             ),
-            dismissButtonColor = FirefoxTheme.colors.iconOnColor.toArgb(),
-            indicatorDirection = CFRPopup.IndicatorDirection.UP,
-            popupVerticalOffset = (-12).dp,
-        ),
         onCFRShown = onCFRShown,
         onDismiss = { onCFRDismiss() },
         text = {
             FirefoxTheme {
                 Text(
                     text = stringResource(R.string.tab_tray_inactive_onboarding_message),
-                    color = FirefoxTheme.colors.textOnColorPrimary,
+                    color = NovaColors.White,
                     style = FirefoxTheme.typography.body2,
                 )
             }
@@ -188,14 +192,13 @@ private fun InactiveTabsHeader(
             FirefoxTheme {
                 Text(
                     text = stringResource(R.string.tab_tray_inactive_onboarding_button_text),
-                    color = FirefoxTheme.colors.textOnColorPrimary,
-                    modifier = Modifier.clickable {
-                        dismissCFR()
-                        onCFRClick()
-                    },
-                    style = FirefoxTheme.typography.body2.copy(
-                        textDecoration = TextDecoration.Underline,
-                    ),
+                    color = NovaColors.White,
+                    modifier =
+                        Modifier.clickable {
+                            dismissCFR()
+                            onCFRClick()
+                        },
+                    style = FirefoxTheme.typography.body2.copy(textDecoration = TextDecoration.Underline),
                 )
             }
         },
@@ -220,17 +223,16 @@ private fun InactiveTabsSubHeader(
     onDeleteAllButtonClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(start = 16.dp),
+        modifier =
+            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(start = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(
-                R.string.inactive_tabs_num_items,
-                inactiveTabsSize,
-            ),
+            text =
+                stringResource(
+                    R.string.inactive_tabs_num_items,
+                    inactiveTabsSize,
+                ),
             modifier = Modifier.weight(1f),
             style = FirefoxTheme.typography.body1,
         )
@@ -262,10 +264,11 @@ private fun InactiveTabsAutoClosePrompt(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
-        ),
+        border =
+            BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+            ),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp),
@@ -273,9 +276,7 @@ private fun InactiveTabsAutoClosePrompt(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.tab_tray_inactive_auto_close_title),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -285,9 +286,8 @@ private fun InactiveTabsAutoClosePrompt(
 
                 IconButton(
                     onClick = onDismissClick,
-                    contentDescription = stringResource(
-                        R.string.tab_tray_inactive_auto_close_button_content_description,
-                    ),
+                    contentDescription =
+                        stringResource(R.string.tab_tray_inactive_auto_close_button_content_description),
                     modifier = Modifier.size(20.dp),
                 ) {
                     Icon(
@@ -299,10 +299,11 @@ private fun InactiveTabsAutoClosePrompt(
             }
 
             Text(
-                text = stringResource(
-                    R.string.tab_tray_inactive_auto_close_body_2,
-                    stringResource(R.string.app_name),
-                ),
+                text =
+                    stringResource(
+                        R.string.tab_tray_inactive_auto_close_body_2,
+                        stringResource(R.string.app_name),
+                    ),
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.fillMaxWidth(),
                 fontSize = 14.sp,
@@ -331,20 +332,23 @@ private fun InactiveTabsAutoClosePromptPreview() {
 
 @Composable
 @PreviewLightDark
-private fun InactiveTabsListPreview() {
+private fun InactiveTabsListPreview(
+    @PreviewParameter(InactiveTabsListPreviewParameterProvider::class) showCFR: Boolean
+) {
     var expanded by remember { mutableStateOf(true) }
     var showAutoClosePrompt by remember { mutableStateOf(true) }
 
     FirefoxTheme {
         Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             InactiveTabsList(
-                inactiveTabs = listOf(
-                    createTab(url = "www.mozilla.com"),
-                    createTab(url = "www.example.com"),
-                ),
+                inactiveTabs =
+                    listOf(
+                        createTab(url = "www.mozilla.com"),
+                        createTab(url = "www.example.com"),
+                    ),
                 expanded = expanded,
                 showAutoCloseDialog = showAutoClosePrompt,
-                showCFR = false,
+                showCFR = showCFR,
                 onHeaderClick = { expanded = !expanded },
                 onDeleteAllButtonClick = {},
                 onAutoCloseDismissClick = { showAutoClosePrompt = !showAutoClosePrompt },
@@ -357,4 +361,8 @@ private fun InactiveTabsListPreview() {
             )
         }
     }
+}
+
+private class InactiveTabsListPreviewParameterProvider : PreviewParameterProvider<Boolean> {
+    override val values: Sequence<Boolean> = sequenceOf(true, false)
 }

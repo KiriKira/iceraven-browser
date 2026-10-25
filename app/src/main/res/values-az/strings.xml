@@ -17,8 +17,6 @@
   <string name="search_hint">Ünvanı daxil et və ya axtar</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Məxfi səyahət haqqında olan əfsanələr</string>
-  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
-
   <!--
     Home screen icons - Long press shortcuts
 
@@ -91,10 +89,6 @@
   <string name="search_suggestions_onboarding_title">Məxfi sessiyada axtarış təkliflərinə icazə verilsin?</string>
   <!-- Search suggestion onboarding hint description text, %s is the name of the app (for example "Firefox"). -->
   <string name="search_suggestions_onboarding_text">%s ünvan sətrində yazdığınız hər şeyi əsas axtarış mühərriyiniz ilə paylaşacaq.</string>
-  <!-- ==== Project "Nova" onboarding strings ==== -->
-
-  <!-- ==== End of Project "Nova" onboarding strings ==== -->
-
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">Axtar</string>
   <!-- Text preview for larger sized widgets -->
@@ -279,12 +273,6 @@
     %1$d is the number of bookmarks selected
   -->
   <string name="history_multi_select_title">%1$d seçilib</string>
-  <!-- Text for the header that groups the history the past 7 days -->
-  <string name="history_7_days">Son 7 gün</string>
-  <!-- Text for the header that groups the history the past 30 days -->
-  <string name="history_30_days">Son 30 gün</string>
-  <!-- Text for the header that groups the history older than the last month -->
-  <string name="history_older">Daha əvvəl</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">Burda tarixçə yoxdur</string>
   <!-- Close tab button text on the tab crash page -->
@@ -500,12 +488,6 @@
   <!--
     Enhanced Tracking Protection
 
-    Link displayed in enhanced tracking protection panel to access tracking protection settings
-  -->
-  <string name="etp_settings">Qoruma tənzimləmələri</string>
-  <!--
-    Enhanced Tracking Protection
-
     Preference title for enhanced tracking protection settings
   -->
   <string name="preference_enhanced_tracking_protection">Artırılmış izlənmə qoruması</string>
@@ -543,8 +525,6 @@
   <string name="preference_enhanced_tracking_protection_custom_cryptominers">Kriptomaynerlər</string>
   <!-- Header for categories that are being being blocked by current Enhanced Tracking Protection settings -->
   <string name="enhanced_tracking_protection_blocked">Əngəllənib</string>
-  <!-- Header for categories that are being not being blocked by current Enhanced Tracking Protection settings -->
-  <string name="enhanced_tracking_protection_allowed">İcazə verilənlər</string>
   <!-- Category of trackers (social media trackers) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_social_media_trackers_title">Sosial media izləyiciləri</string>
   <!-- Category of trackers (cross-site tracking cookies) that can be blocked by Enhanced Tracking Protection -->
@@ -639,20 +619,6 @@
   <string name="search_add_custom_engine_error_empty_search_string">Axtarış mətnini daxil edin</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">İstisna sayt yoxdur</string>
-  <!--
-    text shown before the issuer name to indicate who its verified by, %1$s is the name of
-    the certificate authority that verified the ticket
-  -->
-  <string name="certificate_info_verified_by">Təsdiqləyən: %1$s</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Sil</string>
-  <!-- Translations feature -->
-
-  <!-- TextField Design System Component -->
-
-  <!-- ==== Terms of use pop up prompt ==== -->
-
-  <!-- ==== Experiment strings. ==== -->
-
-  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

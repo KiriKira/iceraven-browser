@@ -8,6 +8,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import mozilla.components.compose.base.theme.Theme
 import mozilla.components.service.fxa.manager.AccountState.AuthenticationProblem
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Rule
@@ -17,28 +18,26 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.menu.store.IPProtectionMenuState
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.Theme
 
 @RunWith(AndroidJUnit4::class)
 class MainMenuTest {
-    @get:Rule
-    val composeTestRule = createComposeRule()
+    @get:Rule val composeTestRule = createComposeRule()
 
-    private val changeWallpaperLabel: String
-        get() = testContext.getString(R.string.browser_menu_change_wallpaper)
+    private val customizeHomepageLabel: String
+        get() = testContext.getString(R.string.browser_menu_customize_homepage)
 
     @Test
-    fun `WHEN the access point is Home THEN the change wallpaper menu item is displayed`() {
+    fun `WHEN the access point is Home THEN the customize homepage menu item is displayed`() {
         setMainMenuContent(accessPoint = MenuAccessPoint.Home)
 
-        composeTestRule.onNodeWithText(changeWallpaperLabel, useUnmergedTree = true).assertExists()
+        composeTestRule.onNodeWithText(customizeHomepageLabel, useUnmergedTree = true).assertExists()
     }
 
     @Test
-    fun `WHEN the access point is Browser THEN the change wallpaper menu item is not displayed`() {
+    fun `WHEN the access point is Browser THEN the customize homepage menu item is not displayed`() {
         setMainMenuContent(accessPoint = MenuAccessPoint.Browser)
 
-        composeTestRule.onNodeWithText(changeWallpaperLabel, useUnmergedTree = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText(customizeHomepageLabel, useUnmergedTree = true).assertDoesNotExist()
     }
 
     private fun setMainMenuContent(accessPoint: MenuAccessPoint) {
@@ -57,7 +56,6 @@ class MainMenuTest {
                     isBookmarked = false,
                     isDesktopMode = false,
                     isPdf = false,
-                    isPrivate = false,
                     isReaderViewActive = false,
                     isExtensionsProcessDisabled = false,
                     isMoreMenuHighlighted = false,
@@ -74,7 +72,7 @@ class MainMenuTest {
                     onCustomizeReaderViewMenuClick = {},
                     onMozillaAccountButtonClick = {},
                     onSettingsButtonClick = {},
-                    onWallpaperButtonClick = {},
+                    onCustomizeHomepageButtonClick = {},
                     onBookmarkPageMenuClick = {},
                     onEditBookmarkButtonClick = {},
                     onSwitchToDesktopSiteMenuClick = {},

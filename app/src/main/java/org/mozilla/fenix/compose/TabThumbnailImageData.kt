@@ -4,19 +4,21 @@
 
 package org.mozilla.fenix.compose
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import mozilla.components.browser.state.state.TabSessionState
 
 /**
- * Data class containing only the necessary data from
- * [TabSessionState] to display a tab's thumbnail so the entire [TabSessionState] need not be passed.
+ * Data class containing only the necessary data from [TabSessionState] to display a tab's thumbnail so the entire
+ * [TabSessionState] need not be passed.
  *
  * @property tabId: The tab's id
  * @property isPrivate: Is the tab private?
  * @property tabUrl: The tab's URL
  * @property tabIcon: The tab's icon
  */
+@Immutable
 data class TabThumbnailImageData(
     val tabId: String,
     val isPrivate: Boolean,
@@ -25,8 +27,8 @@ data class TabThumbnailImageData(
 )
 
 /**
- * Extension function that returns a subset of [TabSessionState] containing
- * only the necessary data to display a tab's thumbnail image data.
+ * Extension function that returns a subset of [TabSessionState] containing only the necessary data to display a tab's
+ * thumbnail image data.
  */
 fun TabSessionState.thumbnailImageData(): TabThumbnailImageData {
     return TabThumbnailImageData(

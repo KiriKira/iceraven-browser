@@ -27,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,10 +49,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.map
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.searchbar.TopSearchBar
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.toShortUrl
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
@@ -69,7 +68,6 @@ import org.mozilla.fenix.tabstray.redux.store.TabsTrayStore
 import org.mozilla.fenix.tabstray.ui.tabitems.BasicTabListItem
 import org.mozilla.fenix.tabstray.ui.tabpage.EmptyTabPage
 import org.mozilla.fenix.theme.FirefoxTheme
-import mozilla.components.ui.icons.R as iconsR
 
 private val SearchResultsCornerRadius = 12.dp
 private val SearchResultsPadding = 16.dp
@@ -77,15 +75,15 @@ private val SearchResultsPadding = 16.dp
 /**
  * The top-level Composable for the Tab Search feature within the Tab Manager.
  *
- * @param store [TabsTrayStore] used to listen for changes to [TabsTrayState].
+ * @param state The current snapshot of [TabSearchState].
+ * @param onAction Invoked to pass upwards a [TabsTrayAction] in response to a UI event.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabSearchScreen(
-    store: TabsTrayStore,
+    state: TabSearchState,
+    onAction: (TabsTrayAction) -> Unit,
 ) {
-    val state by remember { store.stateFlow.map { it.tabSearchState } }
-        .collectAsState(initial = store.state.tabSearchState)
     val searchBarState = rememberSearchBarState()
     var expanded by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -99,13 +97,11 @@ fun TabSearchScreen(
         topBar = {
             TopSearchBar(
                 state = searchBarState,
-                modifier = Modifier
-                    .focusRequester(focusRequester)
-                    .padding(horizontal = 8.dp),
+                modifier = Modifier.focusRequester(focusRequester).padding(horizontal = 8.dp),
                 query = state.query,
-                onQueryChange = { store.dispatch(TabSearchAction.SearchQueryChanged(it)) },
+                onQueryChange = { onAction(TabSearchAction.SearchQueryChanged(it)) },
                 onSearch = { submitted ->
-                    store.dispatch(TabSearchAction.SearchQueryChanged(submitted))
+                    onAction(TabSearchAction.SearchQueryChanged(submitted))
                     focusManager.clearFocus()
                     keyboardController?.hide()
                 },
@@ -120,11 +116,10 @@ fun TabSearchScreen(
                             expanded = false
                             focusManager.clearFocus(force = true)
                             keyboardController?.hide()
-                            store.dispatch(TabsTrayAction.NavigateBackInvoked)
+                            onAction(TabsTrayAction.NavigateBackInvoked)
                         },
-                        contentDescription = stringResource(
-                            id = R.string.tab_manager_search_bar_back_content_description,
-                        ),
+                        contentDescription =
+                            stringResource(id = R.string.tab_manager_search_bar_back_content_description),
                         modifier = Modifier.testTag(TAB_SEARCH_BACK_BUTTON),
                     ) {
                         Icon(
@@ -134,24 +129,20 @@ fun TabSearchScreen(
                     }
                 },
             )
-        },
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier.padding(innerPadding).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (state.showNoResults) {
-                EmptyTabSearchResults(
-                    modifier = Modifier
-                        .fillMaxSize(),
-                )
+                EmptyTabSearchResults(modifier = Modifier.fillMaxSize())
             } else {
                 TabSearchResults(
                     searchResults = state.searchResults,
                     query = state.query,
-                    modifier = Modifier
-                        .padding(horizontal = SearchResultsPadding),
-                    onSearchResultClicked = { store.dispatch(TabSearchAction.SearchResultClicked(it)) },
+                    modifier = Modifier.padding(horizontal = SearchResultsPadding),
+                    onSearchResultClicked = { onAction(TabSearchAction.SearchResultClicked(it)) },
                 )
             }
         }
@@ -193,36 +184,34 @@ private fun TabSearchResults(
             items = searchResults,
             key = { _, tab -> tab.id },
         ) { index, tabItem ->
-            val itemShape = when {
-                lastIndex == 0 ->
-                    RoundedCornerShape(SearchResultsCornerRadius)
-                index == 0 ->
-                    RoundedCornerShape(
-                        topStart = SearchResultsCornerRadius,
-                        topEnd = SearchResultsCornerRadius,
-                    )
-                index == lastIndex ->
-                    RoundedCornerShape(
-                        bottomStart = SearchResultsCornerRadius,
-                        bottomEnd = SearchResultsCornerRadius,
-                    )
-                else ->
-                    RoundedCornerShape(0.dp)
-            }
+            val itemShape =
+                when {
+                    lastIndex == 0 -> RoundedCornerShape(SearchResultsCornerRadius)
+                    index == 0 ->
+                        RoundedCornerShape(
+                            topStart = SearchResultsCornerRadius,
+                            topEnd = SearchResultsCornerRadius,
+                        )
+                    index == lastIndex ->
+                        RoundedCornerShape(
+                            bottomStart = SearchResultsCornerRadius,
+                            bottomEnd = SearchResultsCornerRadius,
+                        )
+                    else -> RoundedCornerShape(0.dp)
+                }
 
             when (tabItem) {
-                is TabsTrayItem.Tab -> TabItemSearchResult(
-                    tab = tabItem,
-                    shape = itemShape,
-                    onSearchResultClicked = onSearchResultClicked,
-                )
+                is TabsTrayItem.Tab ->
+                    TabItemSearchResult(
+                        tab = tabItem,
+                        shape = itemShape,
+                        onSearchResultClicked = onSearchResultClicked,
+                    )
                 is TabsTrayItem.TabGroup -> {}
             }
 
             if (index < lastIndex) {
-                HorizontalDivider(
-                    modifier = Modifier.widthIn(max = FirefoxTheme.layout.size.containerMaxWidth),
-                )
+                HorizontalDivider(modifier = Modifier.widthIn(max = FirefoxTheme.layout.size.containerMaxWidth))
             }
         }
     }
@@ -235,19 +224,20 @@ private fun TabItemSearchResult(
     onSearchResultClicked: (TabsTrayItem) -> Unit,
 ) {
     val tabUrl = tab.url.toShortUrl()
-    val faviconPainter = tab.icon?.run {
-        prepareToDraw()
-        BitmapPainter(asImageBitmap())
-    }
+    val faviconPainter =
+        tab.icon?.run {
+            prepareToDraw()
+            BitmapPainter(asImageBitmap())
+        }
 
     BasicTabListItem(
         title = tab.title,
         url = tabUrl,
-        modifier = Modifier
-            .clip(shape)
-            .widthIn(max = FirefoxTheme.layout.size.containerMaxWidth)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .testTag(tag = TabsTrayTestTag.TAB_ITEM_ROOT),
+        modifier =
+            Modifier.clip(shape)
+                .widthIn(max = FirefoxTheme.layout.size.containerMaxWidth)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                .testTag(tag = TabsTrayTestTag.TAB_ITEM_ROOT),
         faviconPainter = faviconPainter,
         onClick = { onSearchResultClicked(tab) },
     )
@@ -259,12 +249,8 @@ private fun TabItemSearchResult(
  * @param modifier The [Modifier] to be applied.
  */
 @Composable
-private fun EmptyTabSearchResults(
-    modifier: Modifier = Modifier,
-) {
-    EmptyTabPage(
-        modifier = modifier,
-    ) {
+private fun EmptyTabSearchResults(modifier: Modifier = Modifier) {
+    EmptyTabPage(modifier = modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -291,23 +277,24 @@ private fun EmptyTabSearchResults(
 }
 
 private class TabSearchParameterProvider : PreviewParameterProvider<TabsTrayState> {
-    private val searchResults = listOf(
-        createTab(
-            url = "mozilla.org",
-            id = "1",
-            title = "Mozilla",
-        ),
-        createTab(
-            url = "maps.google.com",
-            id = "2",
-            title = "Google Maps",
-        ),
-        createTab(
-            url = "google.com/maps/place/Mozilla+Toronto/@43.6472856,-79.3944129,17z/",
-            id = "3",
-            title = "Long Google Maps URL",
-        ),
-    )
+    private val searchResults =
+        listOf(
+            createTab(
+                url = "mozilla.org",
+                id = "1",
+                title = "Mozilla",
+            ),
+            createTab(
+                url = "maps.google.com",
+                id = "2",
+                title = "Google Maps",
+            ),
+            createTab(
+                url = "google.com/maps/place/Mozilla+Toronto/@43.6472856,-79.3944129,17z/",
+                id = "3",
+                title = "Long Google Maps URL",
+            ),
+        )
 
     private val manySearchResults = buildList {
         repeat(4) { index ->
@@ -315,37 +302,37 @@ private class TabSearchParameterProvider : PreviewParameterProvider<TabsTrayStat
         }
     }
 
-    override val values = sequenceOf(
-        TabsTrayState(),
-        TabsTrayState(
-            tabSearchState = TabSearchState(
-                query = "m",
-                searchResults = searchResults,
+    override val values =
+        sequenceOf(
+            TabsTrayState(),
+            TabsTrayState(
+                tabSearchState =
+                    TabSearchState(
+                        query = "m",
+                        searchResults = searchResults,
+                    )
             ),
-        ),
-        TabsTrayState(
-            tabSearchState = TabSearchState(
-                query = "firefox",
-                searchResults = emptyList(),
+            TabsTrayState(
+                tabSearchState =
+                    TabSearchState(
+                        query = "firefox",
+                        searchResults = emptyList(),
+                    )
             ),
-        ),
-        TabsTrayState(
-            tabSearchState = TabSearchState(
-                query = "m",
-                searchResults = manySearchResults,
+            TabsTrayState(
+                tabSearchState =
+                    TabSearchState(
+                        query = "m",
+                        searchResults = manySearchResults,
+                    )
             ),
-        ),
-    )
+        )
 }
 
-/**
- * Preview for the tab search screen.
- */
+/** Preview for the tab search screen. */
 @FlexibleWindowLightDarkPreview
 @Composable
-private fun TabSearchScreenPreview(
-    @PreviewParameter(TabSearchParameterProvider::class) state: TabsTrayState,
-) {
+private fun TabSearchScreenPreview(@PreviewParameter(TabSearchParameterProvider::class) state: TabsTrayState) {
     val scope = rememberCoroutineScope()
     val store = remember {
         TabsTrayStore(
@@ -355,6 +342,9 @@ private fun TabSearchScreenPreview(
     }
 
     FirefoxTheme {
-        TabSearchScreen(store = store)
+        TabSearchScreen(
+            state = store.state.tabSearchState,
+            onAction = store::dispatch,
+        )
     }
 }

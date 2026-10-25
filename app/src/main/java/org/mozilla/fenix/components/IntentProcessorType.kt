@@ -10,41 +10,45 @@ import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 
 enum class IntentProcessorType {
-    EXTERNAL_APP, NEW_TAB, EXTERNAL_DEEPLINK, OTHER, ADDON_INSTALL;
+    EXTERNAL_APP,
+    NEW_TAB,
+    EXTERNAL_DEEPLINK,
+    OTHER,
+    ADDON_INSTALL;
 
-    /**
-     * The destination activity based on this intent
-     */
+    /** The destination activity based on this intent */
     val activityClassName: String
-        get() = when (this) {
-            EXTERNAL_APP -> ExternalAppBrowserActivity::class.java.name
-            NEW_TAB, EXTERNAL_DEEPLINK, OTHER, ADDON_INSTALL -> HomeActivity::class.java.name
+        get() =
+            when (this) {
+                EXTERNAL_APP -> ExternalAppBrowserActivity::class.java.name
+                NEW_TAB,
+                EXTERNAL_DEEPLINK,
+                OTHER,
+                ADDON_INSTALL -> HomeActivity::class.java.name
+            }
 
+    /** Should this intent automatically navigate to the browser? */
+    fun shouldOpenToBrowser(intent: Intent): Boolean =
+        when (this) {
+            EXTERNAL_APP -> true
+            NEW_TAB -> intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
+            EXTERNAL_DEEPLINK,
+            OTHER -> false
+            ADDON_INSTALL -> true
         }
+}
 
-    /**
-     * Should this intent automatically navigate to the browser?
-     */
-    fun shouldOpenToBrowser(intent: Intent): Boolean = when (this) {
-        EXTERNAL_APP -> true
-        NEW_TAB -> intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
-        EXTERNAL_DEEPLINK, OTHER -> false
-        ADDON_INSTALL -> true
+/** Classifies the [IntentProcessorType] based on the [IntentProcessor] that handled the [Intent]. */
+fun IntentProcessors.getType(processor: IntentProcessor?) =
+    when {
+        externalAppIntentProcessors.contains(processor) ||
+            customTabIntentProcessor == processor ||
+            privateCustomTabIntentProcessor == processor -> IntentProcessorType.EXTERNAL_APP
+        addonInstallIntentProcessor == processor -> IntentProcessorType.ADDON_INSTALL
+        intentProcessor == processor ||
+            privateIntentProcessor == processor ||
+            fennecPageShortcutIntentProcessor == processor ||
+            webNotificationsIntentProcessor == processor -> IntentProcessorType.NEW_TAB
+        externalDeepLinkIntentProcessor == processor -> IntentProcessorType.EXTERNAL_DEEPLINK
+        else -> IntentProcessorType.OTHER
     }
-}
-
-/**
- * Classifies the [IntentProcessorType] based on the [IntentProcessor] that handled the [Intent].
- */
-fun IntentProcessors.getType(processor: IntentProcessor?) = when {
-    externalAppIntentProcessors.contains(processor) ||
-        customTabIntentProcessor == processor ||
-        privateCustomTabIntentProcessor == processor -> IntentProcessorType.EXTERNAL_APP
-    addonInstallIntentProcessor == processor -> IntentProcessorType.ADDON_INSTALL
-    intentProcessor == processor ||
-        privateIntentProcessor == processor ||
-        fennecPageShortcutIntentProcessor == processor ||
-        webNotificationsIntentProcessor == processor -> IntentProcessorType.NEW_TAB
-    externalDeepLinkIntentProcessor == processor -> IntentProcessorType.EXTERNAL_DEEPLINK
-    else -> IntentProcessorType.OTHER
-}

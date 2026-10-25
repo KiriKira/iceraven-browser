@@ -4,8 +4,11 @@
 
 package org.mozilla.fenix.ipprotection.helpers
 
+import java.time.format.DateTimeParseException
+import java.util.Locale
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -13,14 +16,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.helpers.LocaleTestRule
 import org.robolectric.RobolectricTestRunner
-import java.time.format.DateTimeParseException
-import java.util.Locale
 
 @RunWith(RobolectricTestRunner::class)
 class IsoPromoDeadlineTest {
 
-    @get:Rule
-    val localeTestRule = LocaleTestRule(Locale.US)
+    @get:Rule val localeTestRule = LocaleTestRule(Locale.US)
 
     @Test
     fun `GIVEN a valid ISO date WHEN formatted THEN returns a non-null localized string and does not report an exception`() {
@@ -31,7 +31,7 @@ class IsoPromoDeadlineTest {
         assertNotNull(formatted)
         assertTrue(
             "Expected formatted date to contain the month name, was \"$formatted\"",
-            formatted!!.contains("September"),
+            formatted.contains("September"),
         )
         assertTrue(formatted.contains("30"))
         assertTrue(captured.isEmpty())
@@ -45,7 +45,7 @@ class IsoPromoDeadlineTest {
 
         assertNull(formatted)
         assertEquals(1, captured.size)
-        assertTrue(captured.single() is DateTimeParseException)
+        assertIs<DateTimeParseException>(captured.single())
     }
 
     @Test
@@ -56,7 +56,7 @@ class IsoPromoDeadlineTest {
 
         assertNull(formatted)
         assertEquals(1, captured.size)
-        assertTrue(captured.single() is DateTimeParseException)
+        assertIs<DateTimeParseException>(captured.single())
     }
 
     @Test
@@ -67,7 +67,7 @@ class IsoPromoDeadlineTest {
 
         assertNull(formatted)
         assertEquals(1, captured.size)
-        assertTrue(captured.single() is DateTimeParseException)
+        assertIs<DateTimeParseException>(captured.single())
     }
 
     @Test
@@ -78,6 +78,6 @@ class IsoPromoDeadlineTest {
 
         assertNull(formatted)
         assertEquals(1, captured.size)
-        assertTrue(captured.single() is DateTimeParseException)
+        assertIs<DateTimeParseException>(captured.single())
     }
 }

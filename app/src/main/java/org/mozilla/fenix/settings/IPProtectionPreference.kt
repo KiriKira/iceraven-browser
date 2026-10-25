@@ -6,6 +6,8 @@ package org.mozilla.fenix.settings
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,23 +24,21 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.theme.PreviewThemeProvider
+import mozilla.components.compose.base.theme.Theme
 import mozilla.components.compose.base.theme.information
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.PreviewThemeProvider
-import org.mozilla.fenix.theme.Theme
 
-/**
- * A [ComposePreference] for the built-in VPN (IP Protection) settings entry.
- */
-class IPProtectionPreference @JvmOverloads constructor(
+/** A [ComposePreference] for the built-in VPN (IP Protection) settings entry. */
+class IPProtectionPreference
+@JvmOverloads
+constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : ComposePreference(context, attrs) {
 
-    /**
-     * Enables a `beta` badge next to the entry.
-     */
+    /** Enables a `beta` badge next to the entry. */
     var showBetaBadge: Boolean = false
 
     @Composable
@@ -56,13 +56,13 @@ internal fun IPProtectionPreferenceRow(
     showBetaBadge: Boolean,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics(mergeDescendants = true) {}
-            .padding(
-                horizontal = FirefoxTheme.layout.space.static200,
-                vertical = FirefoxTheme.layout.space.static200,
-            ),
+        modifier =
+            Modifier.fillMaxWidth()
+                .semantics(mergeDescendants = true) {}
+                .padding(
+                    horizontal = FirefoxTheme.layout.space.static200,
+                    vertical = FirefoxTheme.layout.space.static200,
+                ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -81,9 +81,12 @@ internal fun IPProtectionPreferenceRow(
 
 @Composable
 private fun BetaBadge() {
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.information,
+    Box(
+        modifier =
+            Modifier.background(
+                MaterialTheme.colorScheme.information,
+                MaterialTheme.shapes.small,
+            )
     ) {
         Text(
             text = stringResource(R.string.preferences_ip_protection_beta_badge_label),
@@ -96,9 +99,7 @@ private fun BetaBadge() {
 
 @PreviewLightDark
 @Composable
-private fun IPProtectionPreferenceRowPreview(
-    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
-) {
+private fun IPProtectionPreferenceRowPreview(@PreviewParameter(PreviewThemeProvider::class) theme: Theme) {
     FirefoxTheme(theme) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             IPProtectionPreferenceRow(
@@ -111,9 +112,7 @@ private fun IPProtectionPreferenceRowPreview(
 
 @PreviewLightDark
 @Composable
-private fun IPProtectionPreferenceRowNoBadgePreview(
-    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
-) {
+private fun IPProtectionPreferenceRowNoBadgePreview(@PreviewParameter(PreviewThemeProvider::class) theme: Theme) {
     FirefoxTheme(theme) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             IPProtectionPreferenceRow(

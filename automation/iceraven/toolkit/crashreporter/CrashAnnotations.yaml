@@ -3,11 +3,13 @@
 # Mandatory fields for each entry are:
 # - description: A string describing the annotation
 # - type: the annotation type, currently `string`, `boolean`, `u32`, `u64`,
-#   `usize`, or `object`. `boolean` values are stringified to `1` for true and
-#   `0` for false. `object` types are a JSON object (not serialized), and may
-#   only be used for client-scoped annotations. They are only used internally
-#   by the crash reporting machinery; these values can't be accessed by the
-#   C++/JS APIs.
+#   `usize`, or `object`. `string` values that contain the empty string will
+#   not be stored in the crash report, no matter if the annotation was
+#   registered, only non-empty value will result in an entry. `boolean` values
+#   are stringified to `1` for true and `0` for false. `object` types are a
+#   JSON object (not serialized), and may only be used for client-scoped
+#   annotations. They are only used internally by the crash reporting
+#   machinery; these values can't be accessed by the C++/JS APIs.
 #
 # Additionally an entry can have the following optional fields:
 # - altname: A string that will be used when writing out the annotation to the
@@ -381,6 +383,15 @@ CrashType:
   type: string
   scope: ping
 
+CrashSignatureOverrideForTesting:
+  description: >
+    Holds a fixed crash signature that overrides the one test automation would
+    otherwise derive from the crashing stack. When present, test automation
+    reports the crash under this signature. This only affects test automation;
+    production crash reporting (e.g. Socorro) ignores it.
+  type: string
+  scope: report
+
 ContentSandboxCapabilities:
   description: >
     List of capabilities of the content process sandbox.
@@ -416,6 +427,21 @@ GpuSandboxLevel:
     GPU sandbox level.
   type: u32
   scope: report
+
+CPUArchitecture:
+  description: >
+    Architecture of the CPU. One of the values described in `system_info.cpu_arch` of
+    https://github.com/rust-minidump/rust-minidump/blob/main/minidump-processor/json-schema.md:
+    "x86", "amd64", "ppc", "ppc64", "sparc", "arm", "arm64", or "unknown".
+  type: string
+  scope: ping
+
+CPUInfo:
+  description: >
+    Information about the CPU, as a string. This typically includes family,
+    model, and stepping.
+  type: string
+  scope: ping
 
 CPUMicrocodeVersion:
   description: >
@@ -646,7 +672,23 @@ HasDeviceTouchScreen:
 InstallTime:
   description: >
     The time when Firefox was installed expressed as seconds since the Epoch
-  type: string # This should be u64 but we currently handle it as a string
+  type: u64
+  scope: ping
+  glean:
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
+  bugs:
+    - 2049748
+
+IntentionalCrashForTesting:
+  description: >
+    Set by test automation when it deliberately crashes a process and expects
+    that crash to happen. When present, mozcrash does not treat the crash as a
+    test failure. This must only ever be set under test-specific configuration;
+    production crashes must never carry it, otherwise real failures would be
+    silently ignored.
+  type: boolean
   scope: report
 
 ipc_channel_error:
@@ -718,7 +760,9 @@ IPCShutdownState:
     IPC shutdown state, can be set to either "RecvShutdown" or
     "SendFinishShutdown" by a content process while it's shutting down.
   type: string
-  scope: report
+  scope: ping
+  bugs:
+    - 2049749
 
 IPCSystemError:
   description: >
@@ -943,6 +987,14 @@ MemtestOutput:
   type: string
   scope: report
 
+LauncherProcessState:
+  description: >
+    Launcher process enabled state. The integer value of this annotation must
+    match with one of the values in the
+    mozilla::LauncherRegistryInfo::EnableState enum
+  type: u32
+  scope: report
+
 LinuxUnderMemoryPressure:
   description: >
     Set to true if the memory pressure watcher was under memory pressure when
@@ -957,13 +1009,11 @@ LinuxMemoryPSI:
   type: string
   scope: ping
 
-LauncherProcessState:
-  description: >
-    Launcher process enabled state. The integer value of this annotation must
-    match with one of the values in the
-    mozilla::LauncherRegistryInfo::EnableState enum
-  type: u32
-  scope: report
+LinuxLSBDescription:
+  description:
+    The Linux lsb_release description.
+  type: string
+  scope: ping
 
 LowPhysicalMemoryEvents:
   description: >
@@ -1031,6 +1081,19 @@ OOMAllocationSize:
     metric: memory
     type: quantity
     unit: bytes
+
+OS:
+  description: >
+    The operating system name. One of the values described in `system_info.os` of
+    https://github.com/rust-minidump/rust-minidump/blob/main/minidump-processor/json-schema.md:
+    "Windows NT", "Mac OS X", "iOS", "Linux", "Solaris", "Android", or "Unknown".
+  type: string
+  scope: ping
+
+OSVersion:
+  description: The operating system version number.
+  type: string
+  scope: ping
 
 PluginFilename:
   description: >
@@ -1208,6 +1271,14 @@ ShutdownReason:
   type: string
   scope: ping
 
+SignalOrigin:
+  description: >
+    Process name of the source of the signal that caused the crash, if applicable.
+    - On Linux, populated with the name of the process that sent a fatal signal
+    to the crashing process, if it can be determined.
+  type: string
+  scope: report
+
 StackTraces:
   description: >
     Stack traces extracted from the crash minidump, if available. A serialized
@@ -1297,7 +1368,13 @@ StartupTime:
   description: >
     The time when Firefox was launched expressed in seconds since the Epoch.
   type: u64
-  scope: report
+  scope: ping
+  glean:
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
+  bugs:
+    - 2049749
 
 StorageConnectionNotClosed:
   description: >
@@ -1460,6 +1537,12 @@ UnknownNetAddrSocketFamily:
   type: u32
   scope: report
 
+UniFFILeakedCallbackId:
+  description: >
+    ID of the leaked callbacks when we force crash in `UniFFI.sys.mjs`
+  type: u32
+  scope: report
+
 UptimeTS:
   description: >
     Uptime in seconds. This annotation uses a string instead of an integer
@@ -1496,7 +1579,9 @@ useragent_locale:
   description: >
     User-agent locale.
   type: string
-  scope: report
+  scope: ping
+  bugs:
+    - 2049749
 
 UserFontRulesExhausted:
   description: >
