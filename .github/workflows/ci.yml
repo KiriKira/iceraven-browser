@@ -95,7 +95,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          RELEASE_TAG="${COMMIT_MESSAGE#\[release\] }"
+          RELEASE_LINE="$(printf '%s\n' "$COMMIT_MESSAGE" | head -n1)"
+          RELEASE_TAG="${RELEASE_LINE#\[release\] }"
           RELEASE_DIR="gradle/build/app/outputs/apk/forkRelease"
           cp "$RELEASE_DIR/app-arm64-v8a-forkRelease.apk" "${RELEASE_TAG}-arm64-v8a.apk"
           cp "$RELEASE_DIR/app-armeabi-v7a-forkRelease.apk" "${RELEASE_TAG}-armeabi-v7a.apk"
