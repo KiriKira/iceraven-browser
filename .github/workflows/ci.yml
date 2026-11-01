@@ -5,6 +5,9 @@ on:
     branches:
       - iceraven
 
+permissions:
+  contents: write
+
 jobs:
   release-automation:
     name: Build App
@@ -85,3 +88,37 @@ jobs:
         with:
           path: gradle/build/app/outputs/apk/forkRelease/app-x86_64-forkRelease.apk
           name: ${{ env.VERSION_NAME }}-x86_64.apk
+
+      - name: Publish GitHub Release
+        if: startsWith(github.event.head_commit.message, '[release] ')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          RELEASE_TAG="${COMMIT_MESSAGE#\[release\] }"
+          RELEASE_DIR="gradle/build/app/outputs/apk/forkRelease"
+          cp "$RELEASE_DIR/app-arm64-v8a-forkRelease.apk" "${RELEASE_TAG}-arm64-v8a.apk"
+          cp "$RELEASE_DIR/app-armeabi-v7a-forkRelease.apk" "${RELEASE_TAG}-armeabi-v7a.apk"
+          cp "$RELEASE_DIR/app-x86_64-forkRelease.apk" "${RELEASE_TAG}-x86_64.apk"
+          sha256sum "${RELEASE_TAG}-arm64-v8a.apk" "${RELEASE_TAG}-armeabi-v7a.apk" "${RELEASE_TAG}-x86_64.apk" > SHA256SUMS
+
+          TITLE="Iceraven ${RELEASE_TAG#iceraven-}"
+          TITLE="${TITLE//-/ }"
+
+          cat > release-notes.md <<'EOF'
+          基于上游 Iceraven 2.51.0 / Firefox 158.0。
+
+          - 保留 parallel-1 的并发下载改动。
+          - 恢复大屏设备与折叠屏展开状态下默认使用移动版网页。
+          - 仍可按站点手动切换桌面版网页。
+          - 提供 arm64-v8a、armeabi-v7a、x86_64 正式签名 APK 与 SHA256SUMS。
+          EOF
+
+          gh release create "$RELEASE_TAG" \
+            "${RELEASE_TAG}-arm64-v8a.apk" \
+            "${RELEASE_TAG}-armeabi-v7a.apk" \
+            "${RELEASE_TAG}-x86_64.apk" \
+            SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes-file release-notes.md
